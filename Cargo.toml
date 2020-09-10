@@ -3,6 +3,15 @@ name = "diener"
 version = "0.1.0"
 authors = ["Bastian Köcher <git@kchr.de>"]
 edition = "2018"
+categories = [ "command-line-utilities" ]
+documentation = "https://docs.rs/diener"
+repository = "https://github.com/bkchr/diener"
+keywords = [ "cli", "substrate", "polkadot" ]
+license = "Apache-2.0/MIT"
+description = """
+dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate) or [Polkadot](https://github.com/paritytech/polkadot) dependency versions
+"""
+readme = "./README.md"
 
 [dependencies]
 structopt = "0.3.17"
