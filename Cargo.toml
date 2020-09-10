@@ -1,0 +1,11 @@
+[package]
+name = "diener"
+version = "0.1.0"
+authors = ["Bastian Köcher <git@kchr.de>"]
+edition = "2018"
+
+[dependencies]
+structopt = "0.3.17"
+walkdir = "2.3.1"
+git-url-parse = "0.2.0"
+toml_edit = "0.2.0"
