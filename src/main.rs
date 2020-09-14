@@ -24,7 +24,7 @@ diener --branch diener-branch-2
 Diener also supports `tag` and `rev` as arguments.
 
 If a depdendency is belongs to Substrate or Polkadot is currently done by looking at the git url.
-It also only works for `paritytech/substrate` or `paritytech/polkadot`, so no third party repo support ;)
+It also only works for repos called `substrate` or `polkadot`.
 
 ## License
 
@@ -44,11 +44,11 @@ use toml_edit::{decorated, Document, InlineTable};
 use walkdir::WalkDir;
 
 /// Which dependencies should be rewritten?
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Rewrite {
     All,
-    Substrate,
-    Polkadot,
+    Substrate(Option<String>),
+    Polkadot(Option<String>),
 }
 
 /// The version the dependencies should be switched to.
@@ -88,6 +88,10 @@ struct Options {
     /// The `tag` that the dependencies should use.
     #[structopt(long, conflicts_with_all = &[ "rev", "branch" ])]
     tag: Option<String>,
+
+    /// Rewrite the `git` url to the give one.
+    #[structopt(long)]
+    git: Option<String>,
 }
 
 impl Options {
@@ -104,11 +108,15 @@ impl Options {
         };
 
         let rewrite = if self.substrate == self.polkadot {
-            Rewrite::All
+            if self.git.is_some() {
+                return Err("You need to pass `--substrate` or `--polkadot` for `--git`.".into());
+            } else {
+                Rewrite::All
+            }
         } else if self.substrate {
-            Rewrite::Substrate
+            Rewrite::Substrate(self.git)
         } else {
-            Rewrite::Polkadot
+            Rewrite::Polkadot(self.git)
         };
 
         Ok((rewrite, version, self.path))
@@ -118,7 +126,7 @@ impl Options {
 /// Handle a given dependency.
 ///
 /// This directly modifies the given `dep` in the requested way.
-fn handle_dependency(dep: &mut InlineTable, rewrite: Rewrite, version: &Version) {
+fn handle_dependency(dep: &mut InlineTable, rewrite: &Rewrite, version: &Version) {
     let git = if let Some(git) = dep
         .get("git")
         .and_then(|v| v.as_str())
@@ -129,13 +137,15 @@ fn handle_dependency(dep: &mut InlineTable, rewrite: Rewrite, version: &Version)
         return;
     };
 
-    match rewrite {
-        Rewrite::All => {}
-        Rewrite::Substrate
-            if git.name == "substrate" && git.owner.as_deref() == Some("paritytech") => {}
-        Rewrite::Polkadot
-            if git.name == "polkadot" && git.owner.as_deref() == Some("paritytech") => {}
+    let new_git = match rewrite {
+        Rewrite::All => &None,
+        Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
+        Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
         _ => return,
+    };
+
+    if let Some(new_git) = new_git {
+        *dep.get_or_insert("git", "") = decorated(new_git.as_str().into(), " ", "");
     }
 
     dep.remove("tag");
@@ -158,7 +168,7 @@ fn handle_dependency(dep: &mut InlineTable, rewrite: Rewrite, version: &Version)
 /// Handle a given `Cargo.toml`.
 ///
 /// This means scanning all dependencies and rewrite the requested onces.
-fn handle_toml_file(path: PathBuf, rewrite: Rewrite, version: &Version) -> Result<(), String> {
+fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Result<(), String> {
     println!("Processing: {}", path.display());
 
     let content = fs::read_to_string(&path)
@@ -204,5 +214,5 @@ fn main() -> Result<(), String> {
         .filter(|e| {
             e.file_type().is_file() && e.file_name().to_string_lossy().ends_with("Cargo.toml")
         })
-        .try_for_each(|toml| handle_toml_file(toml.into_path(), rewrite, &version))
+        .try_for_each(|toml| handle_toml_file(toml.into_path(), &rewrite, &version))
 }
