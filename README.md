@@ -5,7 +5,7 @@
 * [Usage](#usage)
 * [License](#license)
 
-## Usage
+### Usage
 
 Change all Substrate dependencies in a folder to a different branch:
 
@@ -22,9 +22,9 @@ diener --branch diener-branch-2
 Diener also supports `tag` and `rev` as arguments.
 
 If a depdendency is belongs to Substrate or Polkadot is currently done by looking at the git url.
-It also only works for `paritytech/substrate` or `paritytech/polkadot`, so no third party repo support ;)
+It also only works for repos called `substrate` or `polkadot`.
 
-## License
+### License
 
 Licensed under either of
 
@@ -33,3 +33,5 @@ Licensed under either of
  * [MIT license](http://opensource.org/licenses/MIT)
 
 at your option.
+
+License: Apache-2.0/MIT
