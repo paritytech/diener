@@ -1,6 +1,6 @@
 [package]
 name = "diener"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Bastian Köcher <git@kchr.de>"]
 edition = "2018"
 categories = [ "command-line-utilities" ]
