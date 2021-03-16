@@ -31,6 +31,9 @@ pub struct Patch {
     ///
     /// If not given, the current directory will be taken.
     ///
+    /// If this points to a `Cargo.toml` file, this file will be taken as the
+    /// cargo workspace `Cargo.toml` file to add the patches.
+    ///
     /// The patches will be added to the cargo workspace `Cargo.toml` file.
     #[structopt(long)]
     path: Option<PathBuf>,
@@ -80,9 +83,18 @@ impl Patch {
     pub fn run(self) -> Result<(), String> {
         let patch_target = self.patch_target()?;
 
-        let path = self.path.map(Ok).unwrap_or_else(|| {
-            current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
-        })?;
+        let path = self
+            .path
+            .map(|p| {
+                if !p.exists() {
+                    Err(format!("Given --path=`{}` does not exist!", p.display()))
+                } else {
+                    Ok(p)
+                }
+            })
+            .unwrap_or_else(|| {
+                current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
+            })?;
 
         // Get the path to the `Cargo.toml` where we need to add the patches
         let cargo_toml_to_patch = workspace_root_package(&path)?;
@@ -114,6 +126,10 @@ impl Patch {
 }
 
 fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
+    if path.ends_with("Cargo.toml") {
+        return Ok(path.into());
+    }
+
     let metadata = cargo_metadata::MetadataCommand::new()
         .current_dir(path)
         .exec()
