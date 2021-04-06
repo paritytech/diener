@@ -13,6 +13,36 @@ enum PatchTarget {
     Custom(String),
 }
 
+/// Where should the patch point to?
+enum PointTo {
+    /// Point to the crate path.
+    Path,
+    /// Point to the git branch.
+    GitBranch { repository: String, branch: String },
+    /// Point to the git commit.
+    GitCommit { repository: String, commit: String },
+}
+
+impl PointTo {
+    fn from_cli(
+        point_to_git: Option<String>,
+        point_to_git_branch: Option<String>,
+        point_to_git_commit: Option<String>,
+    ) -> Result<Self, String> {
+        if let Some(repository) = point_to_git {
+            if let Some(branch) = point_to_git_branch {
+                Ok(Self::GitBranch { repository, branch })
+            } else if let Some(commit) = point_to_git_commit {
+                Ok(Self::GitCommit { repository, commit })
+            } else {
+                Err("`--point-to-git-branch` or `--point-to-git-commit` are required when `--point-to-git` is passed!".into())
+            }
+        } else {
+            Ok(Self::Path)
+        }
+    }
+}
+
 impl PatchTarget {
     /// Returns the patch target in a toml compatible format.
     fn as_string(&self) -> String {
@@ -44,6 +74,31 @@ pub struct Patch {
     /// all packages of this workspace to the patch section.
     #[structopt(long)]
     crates_to_patch: PathBuf,
+
+    /// Instead of using the path to the crates, use the given git repository.
+    ///
+    /// This requires that either `--point-to-git-commit` or
+    /// `--point-to-git-branch` is given as well.
+    #[structopt(long)]
+    point_to_git: Option<String>,
+
+    /// Specify the git branch that should be used with the repository given
+    /// to `--point-to-git`.
+    #[structopt(
+        long,
+        conflicts_with_all = &[ "point-to-git-commit" ],
+        requires_all = &[ "point-to-git" ],
+    )]
+    point_to_git_branch: Option<String>,
+
+    /// Specify the git commit that should be used with the repository given
+    /// to `--point-to-git`.
+    #[structopt(
+        long,
+        conflicts_with_all = &[ "point-to-git-branch" ],
+        requires_all = &[ "point-to-git" ],
+    )]
+    point_to_git_commit: Option<String>,
 
     /// The patch target that should be used.
     ///
@@ -99,10 +154,17 @@ impl Patch {
         // Get the path to the `Cargo.toml` where we need to add the patches
         let cargo_toml_to_patch = workspace_root_package(&path)?;
 
+        let point_to = PointTo::from_cli(
+            self.point_to_git,
+            self.point_to_git_branch,
+            self.point_to_git_commit,
+        )?;
+
         add_patches_for_packages(
             &cargo_toml_to_patch,
             &patch_target,
             workspace_packages(&self.crates_to_patch)?,
+            point_to,
         )
     }
 
@@ -170,6 +232,7 @@ fn add_patches_for_packages(
     cargo_toml: &Path,
     patch_target: &PatchTarget,
     mut packages: impl Iterator<Item = cargo_metadata::Package>,
+    point_to: PointTo,
 ) -> Result<(), String> {
     let content = fs::read_to_string(cargo_toml)
         .map_err(|e| format!("Could not read `{}`: {:?}", cargo_toml.display(), e))?;
@@ -212,7 +275,20 @@ fn add_patches_for_packages(
             p.manifest_path
         };
 
-        *patch.get_or_insert("path", "") = decorated(path.display().to_string().into(), " ", " ");
+        match &point_to {
+            PointTo::Path => {
+                *patch.get_or_insert("path", "") =
+                    decorated(path.display().to_string().into(), " ", " ");
+            }
+            PointTo::GitBranch { repository, branch } => {
+                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
+                *patch.get_or_insert("branch", "") = decorated(branch.clone().into(), " ", " ");
+            }
+            PointTo::GitCommit { repository, commit } => {
+                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
+                *patch.get_or_insert("rev", "") = decorated(commit.clone().into(), " ", " ");
+            }
+        }
         Ok::<_, String>(())
     })?;
 
