@@ -10,6 +10,7 @@ enum Rewrite {
     All,
     Substrate(Option<String>),
     Polkadot(Option<String>),
+    Beefy(Option<String>),
 }
 
 /// The version the dependencies should be switched to.
@@ -34,6 +35,14 @@ pub struct Update {
     /// Only alter Polkadot dependencies.
     #[structopt(long, short = "p")]
     polkadot: bool,
+
+    /// Only alter BEEFY dependencies.
+    #[structopt(long, short = "b")]
+    beefy: bool,
+
+    /// Only alter BEEFY dependencies.
+    #[structopt(long, short = "a")]
+    all: bool,
 
     /// The `branch` that the dependencies should use.
     #[structopt(long, conflicts_with_all = &[ "rev", "tag" ])]
@@ -65,7 +74,7 @@ impl Update {
             return Err("You need to pass `--branch`, `--tag` or `--rev`".into());
         };
 
-        let rewrite = if self.substrate == self.polkadot {
+        let rewrite = if self.all {
             if self.git.is_some() {
                 return Err("You need to pass `--substrate` or `--polkadot` for `--git`.".into());
             } else {
@@ -73,6 +82,8 @@ impl Update {
             }
         } else if self.substrate {
             Rewrite::Substrate(self.git)
+        } else if self.beefy {
+            Rewrite::Beefy(self.git)
         } else {
             Rewrite::Polkadot(self.git)
         };
@@ -117,6 +128,7 @@ fn handle_dependency(dep: &mut InlineTable, rewrite: &Rewrite, version: &Version
         Rewrite::All => &None,
         Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
         Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
+        Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
         _ => return,
     };
 
