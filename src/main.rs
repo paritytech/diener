@@ -78,7 +78,7 @@ enum SubCommands {
 /// Cli options of Diener
 #[derive(Debug, StructOpt)]
 #[structopt(
-    about = "Diener - dependency diener for replacing substrate or polkadot versions in `Cargo.toml` files"
+    about = "Diener - dependency diener for replacing substrate, polkadot or beefy versions in `Cargo.toml` files"
 )]
 struct Options {
     #[structopt(subcommand)]
