@@ -40,7 +40,7 @@ pub struct Update {
     #[structopt(long, short = "b")]
     beefy: bool,
 
-    /// Only alter BEEFY dependencies.
+    /// Alter polkadot, substrate + beefy dependencies
     #[structopt(long, short = "a")]
     all: bool,
 
@@ -76,7 +76,7 @@ impl Update {
 
         let rewrite = if self.all {
             if self.git.is_some() {
-                return Err("You need to pass `--substrate` or `--polkadot` for `--git`.".into());
+                return Err("You need to pass `--substrate`, `--polkadot` or `--beefy` for `--git`.".into());
             } else {
                 Rewrite::All
             }
@@ -84,8 +84,10 @@ impl Update {
             Rewrite::Substrate(self.git)
         } else if self.beefy {
             Rewrite::Beefy(self.git)
-        } else {
+        } else if self.polkadot {
             Rewrite::Polkadot(self.git)
+        } else {
+            return Err("You must specify one of `--substrate`, `--polkadot`, `--beefy` or `--all`.".into())
         };
 
         Ok((rewrite, version, self.path))
