@@ -1,6 +1,6 @@
 [package]
 name = "diener"
-version = "0.3.3"
+version = "0.4.0"
 authors = ["Bastian Köcher <git@kchr.de>"]
 edition = "2018"
 categories = [ "command-line-utilities" ]
@@ -9,7 +9,7 @@ repository = "https://github.com/bkchr/diener"
 keywords = [ "cli", "substrate", "polkadot" ]
 license = "Apache-2.0/MIT"
 description = """
-dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate) or [Polkadot](https://github.com/paritytech/polkadot) dependency versions
+dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate), [Polkadot](https://github.com/paritytech/polkadot) or [BEEFY](https://github.com/paritytech/grandpa-bridge-gadget) dependency versions
 """
 readme = "./README.md"
 

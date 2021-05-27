@@ -105,7 +105,7 @@ pub struct Patch {
     /// The target is `[patch.TARGET]` in the final `Cargo.toml`.
     #[structopt(
         long,
-        conflicts_with_all = &[ "crates", "substrate", "polkadot" ]
+        conflicts_with_all = &[ "crates", "substrate", "polkadot", "beefy" ]
     )]
     target: Option<String>,
 
@@ -113,7 +113,7 @@ pub struct Patch {
     #[structopt(
         long,
         short = "s",
-        conflicts_with_all = &[ "target", "polkadot", "crates" ]
+        conflicts_with_all = &[ "target", "polkadot", "crates", "beefy" ]
     )]
     substrate: bool,
 
@@ -121,14 +121,22 @@ pub struct Patch {
     #[structopt(
         long,
         short = "p",
-        conflicts_with_all = &[ "target", "substrate", "crates" ]
+        conflicts_with_all = &[ "target", "substrate", "crates", "beefy" ]
     )]
     polkadot: bool,
+
+    /// Use the official BEEFY repo as patch target.
+    #[structopt(
+        long,
+        short = "b",
+        conflicts_with_all = &[ "target", "substrate", "crates", "polkadot" ]
+    )]
+    beefy: bool,
 
     /// Use `crates.io` as patch target.
     #[structopt(
         long,
-        conflicts_with_all = &[ "target", "substrate", "polkadot" ]
+        conflicts_with_all = &[ "target", "substrate", "polkadot", "beefy" ]
     )]
     crates: bool,
 }
@@ -179,10 +187,14 @@ impl Patch {
             Ok(PatchTarget::Git(
                 "https://github.com/paritytech/polkadot".into(),
             ))
+        } else if self.beefy {
+            Ok(PatchTarget::Git(
+                "https://github.com/paritytech/parity-bridges-gadget".into(),
+            ))
         } else if self.crates {
             Ok(PatchTarget::Crates)
         } else {
-            Err("You need to pass `--target`, `--substrate`, `--polkadot` or `--crates`!".into())
+            Err("You need to pass `--target`, `--substrate`, `--polkadot`, `--beefy` or `--crates`!".into())
         }
     }
 }
