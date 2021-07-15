@@ -10,6 +10,7 @@ enum Rewrite {
     All,
     Substrate(Option<String>),
     Polkadot(Option<String>),
+    Cumulus(Option<String>),
     Beefy(Option<String>),
 }
 
@@ -35,6 +36,10 @@ pub struct Update {
     /// Only alter Polkadot dependencies.
     #[structopt(long, short = "p")]
     polkadot: bool,
+
+    /// Only alter Cumulus dependencies.
+    #[structopt(long, short = "c")]
+    cumulus: bool,
 
     /// Only alter BEEFY dependencies.
     #[structopt(long, short = "b")]
@@ -76,7 +81,7 @@ impl Update {
 
         let rewrite = if self.all {
             if self.git.is_some() {
-                return Err("You need to pass `--substrate`, `--polkadot` or `--beefy` for `--git`.".into());
+                return Err("You need to pass `--substrate`, `--polkadot`, `--cumulus` or `--beefy` for `--git`.".into());
             } else {
                 Rewrite::All
             }
@@ -86,8 +91,10 @@ impl Update {
             Rewrite::Beefy(self.git)
         } else if self.polkadot {
             Rewrite::Polkadot(self.git)
+        } else if self.cumulus {
+            Rewrite::Cumulus(self.git)
         } else {
-            return Err("You must specify one of `--substrate`, `--polkadot`, `--beefy` or `--all`.".into())
+            return Err("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.".into())
         };
 
         Ok((rewrite, version, self.path))
@@ -130,6 +137,7 @@ fn handle_dependency(dep: &mut InlineTable, rewrite: &Rewrite, version: &Version
         Rewrite::All => &None,
         Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
         Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
+        Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
         Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
         _ => return,
     };
