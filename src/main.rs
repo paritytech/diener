@@ -1,6 +1,6 @@
 /*!
 
-diener - dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate) or [Polkadot](https://github.com/paritytech/polkadot) dependency versions
+diener - dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate), [Polkadot](https://github.com/paritytech/polkadot) and [Cumulus](https://github.com/paritytech/cumulus) dependency versions
 
 [![](https://docs.rs/diener/badge.svg)](https://docs.rs/diener/) [![](https://img.shields.io/crates/v/diener.svg)](https://crates.io/crates/diener) [![](https://img.shields.io/crates/d/diener.png)](https://crates.io/crates/diener)
 
@@ -20,7 +20,7 @@ Change all Substrate dependencies in a folder to a different branch:
 diener update --substrate --branch diener-branch
 ```
 
-Or you want to change Polkadot and Substrate dependencies to the same branch:
+Or you want to change Polkadot, Substrate and Cumulus dependencies to the same branch:
 
 ```
 diener update --branch diener-branch-2
@@ -28,8 +28,8 @@ diener update --branch diener-branch-2
 
 Diener also supports `tag` and `rev` as arguments.
 
-If a depdendency is belongs to Substrate or Polkadot is currently done by looking at the git url.
-It also only works for repos called `substrate` or `polkadot`.
+If a depdendency is belongs to Substrate, Polkadot or Cumulus is currently done by looking at the git url.
+It also only works for repos called `substrate`, `polkadot` or `cumulus`.
 
 ### Patch
 
@@ -78,7 +78,7 @@ enum SubCommands {
 /// Cli options of Diener
 #[derive(Debug, StructOpt)]
 #[structopt(
-    about = "Diener - dependency diener for replacing substrate, polkadot or beefy versions in `Cargo.toml` files"
+    about = "Diener - dependency diener for replacing substrate, polkadot, cumulus or beefy versions in `Cargo.toml` files"
 )]
 struct Options {
     #[structopt(subcommand)]
