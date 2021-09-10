@@ -65,7 +65,7 @@ use structopt::{
 mod patch;
 mod update;
 
-/// The supported subcommands
+/// diener is a tool for easily changing Substrate or Polkadot dependency versions.
 #[derive(Debug, StructOpt)]
 enum SubCommands {
 	/// Update all `Cargo.toml` files at a given path to some specific path/branch/commit.
