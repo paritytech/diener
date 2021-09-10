@@ -125,7 +125,7 @@ impl Update {
 ///
 /// This directly modifies the given `dep` in the requested way.
 fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, version: &Version) {
-	let git = if let Some(git) = dep.get("git").and_then(|v| v.as_str()).and_then(|d| GitUrl::parse(&d).ok()) {
+	let git = if let Some(git) = dep.get("git").and_then(|v| v.as_str()).and_then(|d| GitUrl::parse(d).ok()) {
 		git
 	} else {
 		return;
