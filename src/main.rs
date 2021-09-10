@@ -58,36 +58,36 @@ at your option.
 
 use structopt::StructOpt;
 
-mod update;
 mod patch;
+mod update;
 
 /// The supported subcommands
 #[derive(Debug, StructOpt)]
 enum SubCommands {
-    /// Update all `Cargo.toml` files at a given path to some specific path/branch/commit.
-    Update(update::Update),
-    /// Patch all crates from a given cargo workspace in another given cargo workspace.
-    ///
-    /// This will get all crates from a given cargo workspace and add a patch
-    /// section for each of these crates to the workspace `Cargo.toml` of a
-    /// given cargo workspace. Essentially this is the same as using
-    /// `.cargo/config`, but using a non-deprecated way.
-    Patch(patch::Patch),
+	/// Update all `Cargo.toml` files at a given path to some specific path/branch/commit.
+	Update(update::Update),
+	/// Patch all crates from a given cargo workspace in another given cargo workspace.
+	///
+	/// This will get all crates from a given cargo workspace and add a patch
+	/// section for each of these crates to the workspace `Cargo.toml` of a
+	/// given cargo workspace. Essentially this is the same as using
+	/// `.cargo/config`, but using a non-deprecated way.
+	Patch(patch::Patch),
 }
 
 /// Cli options of Diener
 #[derive(Debug, StructOpt)]
 #[structopt(
-    about = "Diener - dependency diener for replacing substrate, polkadot, cumulus or beefy versions in `Cargo.toml` files"
+	about = "Diener - dependency diener for replacing substrate, polkadot, cumulus or beefy versions in `Cargo.toml` files"
 )]
 struct Options {
-    #[structopt(subcommand)]
-    subcommand: SubCommands,
+	#[structopt(subcommand)]
+	subcommand: SubCommands,
 }
 
 fn main() -> Result<(), String> {
-    match Options::from_args().subcommand {
-        SubCommands::Update(update) => update.run(),
-        SubCommands::Patch(patch) => patch.run(),
-    }
+	match Options::from_args().subcommand {
+		SubCommands::Update(update) => update.run(),
+		SubCommands::Patch(patch) => patch.run(),
+	}
 }
