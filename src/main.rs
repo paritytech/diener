@@ -65,7 +65,8 @@ use structopt::{
 mod patch;
 mod update;
 
-/// diener is a tool for easily changing Substrate or Polkadot dependency versions.
+/// diener is a tool for easily finding and changing Substrate or Polkadot dependency versions.
+/// diener will not modified the cargo.lock file but update specific dependencies in the Cargo.toml files or the project.
 #[derive(Debug, StructOpt)]
 enum SubCommands {
 	/// Update all `Cargo.toml` files at a given path to some specific path/branch/commit.
