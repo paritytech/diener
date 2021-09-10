@@ -243,7 +243,7 @@ fn add_patches_for_packages(
 		.ok_or_else(|| "Patch target table isn't a toml table!")?;
 
 	packages.try_for_each(|mut p| {
-		println!("Adding patch for `{}`.", p.name);
+		log::info!("Adding patch for `{}`.", p.name);
 
 		let patch = patch_target_table
 			.entry(&p.name)
