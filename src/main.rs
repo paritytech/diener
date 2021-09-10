@@ -56,7 +56,11 @@ Licensed under either of
 at your option.
 */
 
-use structopt::StructOpt;
+use env_logger::Env;
+use structopt::{
+	clap::{crate_name, crate_version},
+	StructOpt,
+};
 
 mod patch;
 mod update;
@@ -86,6 +90,9 @@ struct Options {
 }
 
 fn main() -> Result<(), String> {
+	env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+	log::info!("Running {} v{}", crate_name!(), crate_version!());
+
 	match Options::from_args().subcommand {
 		SubCommands::Update(update) => update.run(),
 		SubCommands::Patch(patch) => patch.run(),

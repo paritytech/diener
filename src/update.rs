@@ -96,7 +96,9 @@ impl Update {
 		} else if self.cumulus {
 			Rewrite::Cumulus(self.git)
 		} else {
-			return Err("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.".into());
+			return Err(
+				"You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.".into()
+			);
 		};
 
 		Ok((rewrite, version, self.path))
@@ -122,7 +124,7 @@ impl Update {
 /// Handle a given dependency.
 ///
 /// This directly modifies the given `dep` in the requested way.
-fn handle_dependency(dep: &mut InlineTable, rewrite: &Rewrite, version: &Version) {
+fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, version: &Version) {
 	let git = if let Some(git) = dep.get("git").and_then(|v| v.as_str()).and_then(|d| GitUrl::parse(&d).ok()) {
 		git
 	} else {
@@ -157,13 +159,14 @@ fn handle_dependency(dep: &mut InlineTable, rewrite: &Rewrite, version: &Version
 			*dep.get_or_insert(" rev", "") = decorated(rev.as_str().into(), " ", " ");
 		}
 	}
+	log::debug!("  updated: {:?} <= {}", version, name);
 }
 
 /// Handle a given `Cargo.toml`.
 ///
 /// This means scanning all dependencies and rewrite the requested onces.
 fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Result<(), String> {
-	println!("Processing: {}", path.display());
+	log::info!("Processing: {}", path.display());
 
 	let content = fs::read_to_string(&path).map_err(|e| format!("Failed to open `{}`: {:?}", path.display(), e))?;
 	let mut toml_doc = Document::from_str(&content).map_err(|e| format!("Failed to parse as toml doc: {:?}", e))?;
@@ -182,7 +185,7 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Resu
 				.for_each(|dn| {
 					// Get the actual inline table from the document that we modify
 					let table = toml_doc[k][dn].as_inline_table_mut().expect("We filter by `is_inline_table`; qed");
-					handle_dependency(table, rewrite, version);
+					handle_dependency(dn, table, rewrite, version);
 				})
 		});
 
