@@ -203,7 +203,7 @@ fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
 		.exec()
 		.map_err(|e| format!("Failed to get cargo metadata for workspace `{}`: {:?}", path.display(), e))?;
 
-	Ok(metadata.workspace_root.join("Cargo.toml"))
+	Ok(metadata.workspace_root.join("Cargo.toml").into())
 }
 
 /// Returns all package names of the given `workspace`.
@@ -251,11 +251,11 @@ fn add_patches_for_packages(
 			.as_inline_table_mut()
 			.ok_or_else(|| format!("Patch entry for `{}` isn't an inline table!", p.name))?;
 
-		let path = if p.manifest_path.ends_with("Cargo.toml") {
+		let path: PathBuf = if p.manifest_path.ends_with("Cargo.toml") {
 			p.manifest_path.pop();
-			p.manifest_path
+			p.manifest_path.into()
 		} else {
-			p.manifest_path
+			p.manifest_path.into()
 		};
 
 		match &point_to {
