@@ -2,7 +2,7 @@ use git_url_parse::GitUrl;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
 use toml_edit::{decorated, Document, InlineTable};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 /// Which dependencies should be rewritten?
 #[derive(Debug, Clone)]
@@ -112,9 +112,18 @@ impl Update {
 			.map(Ok)
 			.unwrap_or_else(|| current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e)))?;
 
+		let is_hidden = |entry: &DirEntry| {
+			entry
+				.file_name()
+				.to_str()
+				.map(|s| s.starts_with("."))
+				.unwrap_or(false)
+		};
+
 		WalkDir::new(path)
 			.follow_links(true)
 			.into_iter()
+			.filter_entry(|e| !is_hidden(e))
 			.filter_map(|e| e.ok())
 			.filter(|e| e.file_type().is_file() && e.file_name().to_string_lossy().ends_with("Cargo.toml"))
 			.try_for_each(|toml| handle_toml_file(toml.into_path(), &rewrite, &version))
