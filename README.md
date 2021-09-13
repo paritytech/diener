@@ -7,6 +7,8 @@
 
 ### Usage
 
+You can find the full documentation on [docs.rs](https://docs.rs/crate/diener).
+
 #### Update
 
 The `update` subcommand changes all `Cargo.toml` files in a given folder to use
