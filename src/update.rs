@@ -112,13 +112,7 @@ impl Update {
 			.map(Ok)
 			.unwrap_or_else(|| current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e)))?;
 
-		let is_hidden = |entry: &DirEntry| {
-			entry
-				.file_name()
-				.to_str()
-				.map(|s| s.starts_with("."))
-				.unwrap_or(false)
-		};
+		let is_hidden = |entry: &DirEntry| entry.file_name().to_str().map(|s| s.starts_with('.')).unwrap_or(false);
 
 		WalkDir::new(path)
 			.follow_links(true)
