@@ -112,7 +112,7 @@ impl Update {
             current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
         })?;
         if !path.is_dir() {
-            return Err(format!("Path '{}' is not a directory.", path.to_string_lossy()));
+            return Err(format!("Path '{}' is not a directory.", path.display()));
         }
 
         let is_hidden = |entry: &DirEntry| {
