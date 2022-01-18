@@ -111,6 +111,9 @@ impl Update {
         let path = path.map(Ok).unwrap_or_else(|| {
             current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
         })?;
+        if !path.is_dir() {
+            return Err(format!("Path '{}' is not a directory.", path.to_string_lossy()));
+        }
 
         let is_hidden = |entry: &DirEntry| {
             entry
