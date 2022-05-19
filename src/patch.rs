@@ -256,7 +256,7 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
                     if let Some(path_segment) = path_segment.to_str() {
                       if path_segment.starts_with('.') {
                           log::info!(
-                              "Skipping file {:?} because its segment {:?} indicates it's a hidden file",
+                              "Skipping file {:?} because its segment {:?} indicates it's within a hidden directory",
                               path_segment,
                               &file.path(),
                           );
