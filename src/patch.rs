@@ -269,7 +269,10 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
                         name: pkg_name.into(),
                     })
                 } else {
-                    log::error!("Package {:?} does not have a name", &file.path());
+                    log::error!(
+                        "Failed to get the package name of {:?} as a string",
+                        &file.path()
+                    );
                     None
                 }
             } else {
