@@ -255,10 +255,10 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
                 for path_segment in cargo_toml_dir.iter() {
                     if let Some(path_segment) = path_segment.to_str() {
                       if path_segment.starts_with('.') {
-                          log::info!(
+                          log::debug!(
                               "Skipping file {:?} because its segment {:?} indicates it's within a hidden directory",
-                              path_segment,
                               &file.path(),
+                              path_segment,
                           );
                           return None;
                       }
