@@ -235,7 +235,7 @@ fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
 
 /// Returns all package names of the given `workspace`.
 struct PackageInfo {
-    cargo_toml_path: PathBuf,
+    cargo_toml_dir: PathBuf,
     name: String,
 }
 fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
@@ -262,8 +262,10 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
                     .ok()?;
 
                 if let Some(pkg_name) = toml_doc.as_table()["package"]["name"].as_str() {
+                    let mut cargo_toml_dir = file.path().to_path_buf();
+                    cargo_toml_dir.pop(); // Remove the "/Cargo.toml" at the end
                     Some(PackageInfo {
-                        cargo_toml_path: file.path().to_path_buf(),
+                        cargo_toml_dir,
                         name: pkg_name.into(),
                     })
                 } else {
@@ -322,7 +324,7 @@ fn add_patches_for_packages(
         match &point_to {
             PointTo::Path => {
                 *patch.get_or_insert("path", "") =
-                    decorated(pkg.cargo_toml_path.display().to_string().into(), " ", " ");
+                    decorated(pkg.cargo_toml_dir.display().to_string().into(), " ", " ");
             }
             PointTo::GitBranch { repository, branch } => {
                 *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
