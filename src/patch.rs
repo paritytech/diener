@@ -6,6 +6,7 @@ use std::{
 };
 use structopt::StructOpt;
 use toml_edit::{decorated, Document, Item, Value};
+use walkdir::WalkDir;
 
 enum PatchTarget {
     Crates,
@@ -180,7 +181,7 @@ impl Patch {
         add_patches_for_packages(
             &cargo_toml_to_patch,
             &patch_target,
-            workspace_packages(&self.crates_to_patch)?,
+            workspace_packages(&self.crates_to_patch),
             point_to,
         )
     }
@@ -233,31 +234,52 @@ fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
 }
 
 /// Returns all package names of the given `workspace`.
-fn workspace_packages(
-    workspace: &Path,
-) -> Result<impl Iterator<Item = cargo_metadata::Package>, String> {
-    let metadata = cargo_metadata::MetadataCommand::new()
-        .current_dir(workspace)
-        .exec()
-        .map_err(|e| {
-            format!(
-                "Failed to get cargo metadata for workspace `{}`: {:?}",
-                workspace.display(),
-                e
-            )
-        })?;
-
-    Ok(metadata
-        .workspace_members
-        .clone()
+struct PackageInfo {
+    cargo_toml_path: PathBuf,
+    name: String,
+}
+fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
+    WalkDir::new(workspace)
+        .follow_links(true)
         .into_iter()
-        .map(move |p| metadata[&p].clone()))
+        .filter_map(|file| {
+            let file = file.ok()?;
+            if file.file_type().is_file() && file.file_name().to_string_lossy() == "Cargo.toml" {
+                let content = fs::read_to_string(&file.path())
+                    .map_err(|err| {
+                        log::error!("Failed to read file {:?} due to {:?}", &file.path(), err)
+                    })
+                    .ok()?;
+
+                let toml_doc = Document::from_str(&content)
+                    .map_err(|err| {
+                        log::error!(
+                            "Failed to parse {:?} as TOML due to {:?}",
+                            &file.path(),
+                            err
+                        )
+                    })
+                    .ok()?;
+
+                if let Some(pkg_name) = toml_doc.as_table()["package"]["name"].as_str() {
+                    Some(PackageInfo {
+                        cargo_toml_path: file.path().to_path_buf(),
+                        name: pkg_name.into(),
+                    })
+                } else {
+                    log::error!("Package {:?} does not have a name", &file.path());
+                    None
+                }
+            } else {
+                None
+            }
+        })
 }
 
 fn add_patches_for_packages(
     cargo_toml: &Path,
     patch_target: &PatchTarget,
-    mut packages: impl Iterator<Item = cargo_metadata::Package>,
+    mut packages: impl Iterator<Item = PackageInfo>,
     point_to: PointTo,
 ) -> Result<(), String> {
     let content = fs::read_to_string(cargo_toml)
@@ -285,28 +307,22 @@ fn add_patches_for_packages(
         .as_table_mut()
         .ok_or("Patch target table isn't a toml table!")?;
 
-    packages.try_for_each(|mut p| {
-        log::info!("Adding patch for `{}`.", p.name);
+    packages.try_for_each(|pkg| {
+        log::info!("Adding patch for `{}`.", pkg.name);
 
         let patch = patch_target_table
-            .entry(&p.name)
+            .entry(&pkg.name)
             .or_insert(Item::Value(Value::InlineTable(Default::default())))
             .as_inline_table_mut()
             .ok_or(format!(
                 "Patch entry for `{}` isn't an inline table!",
-                p.name
+                pkg.name
             ))?;
-
-        if p.manifest_path.ends_with("Cargo.toml") {
-            p.manifest_path.pop();
-        }
-
-        let path: PathBuf = p.manifest_path.into();
 
         match &point_to {
             PointTo::Path => {
                 *patch.get_or_insert("path", "") =
-                    decorated(path.display().to_string().into(), " ", " ");
+                    decorated(pkg.cargo_toml_path.display().to_string().into(), " ", " ");
             }
             PointTo::GitBranch { repository, branch } => {
                 *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
