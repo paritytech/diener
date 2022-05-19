@@ -245,6 +245,33 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
         .filter_map(|file| {
             let file = file.ok()?;
             if file.file_type().is_file() && file.file_name().to_string_lossy() == "Cargo.toml" {
+                let cargo_toml_dir = {
+                    let mut path = file.path().to_path_buf();
+                    path.pop(); // Remove the "/Cargo.toml" at the end
+                    path
+                };
+
+                // Skip the file if it's within a hidden directory
+                for path_segment in cargo_toml_dir.iter() {
+                    if let Some(path_segment) = path_segment.to_str() {
+                      if path_segment.starts_with('.') {
+                          log::info!(
+                              "Skipping file {:?} because its segment {:?} indicates it's a hidden file",
+                              path_segment,
+                              &file.path(),
+                          );
+                          return None;
+                      }
+                    } else {
+                        log::error!(
+                            "Failed to parse path segment {:?} of file {:?}",
+                            path_segment,
+                            &file.path(),
+                        );
+                        return None;
+                    }
+                }
+
                 let content = fs::read_to_string(&file.path())
                     .map_err(|err| {
                         log::error!("Failed to read file {:?} due to {:?}", &file.path(), err)
@@ -262,8 +289,6 @@ fn workspace_packages(workspace: &Path) -> impl Iterator<Item = PackageInfo> {
                     .ok()?;
 
                 if let Some(pkg_name) = toml_doc.as_table()["package"]["name"].as_str() {
-                    let mut cargo_toml_dir = file.path().to_path_buf();
-                    cargo_toml_dir.pop(); // Remove the "/Cargo.toml" at the end
                     Some(PackageInfo {
                         cargo_toml_dir,
                         name: pkg_name.into(),
