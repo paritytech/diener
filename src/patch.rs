@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 use structopt::StructOpt;
-use toml_edit::{decorated, Document, Item, Value};
+use toml_edit::{Document, Item, Value};
 
 enum PatchTarget {
     Crates,
@@ -306,20 +306,23 @@ fn add_patches_for_packages(
         match &point_to {
             PointTo::Path => {
                 *patch.get_or_insert("path", "") =
-                    decorated(path.display().to_string().into(), " ", " ");
+                    Value::from(path.display().to_string()).decorated(" ", " ");
             }
             PointTo::GitBranch { repository, branch } => {
-                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
-                *patch.get_or_insert("branch", "") = decorated(branch.clone().into(), " ", " ");
+                *patch.get_or_insert("git", "") =
+                    Value::from(repository.clone()).decorated(" ", " ");
+                *patch.get_or_insert("branch", "") =
+                    Value::from(branch.clone()).decorated(" ", " ");
             }
             PointTo::GitCommit { repository, commit } => {
-                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
-                *patch.get_or_insert("rev", "") = decorated(commit.clone().into(), " ", " ");
+                *patch.get_or_insert("git", "") =
+                    Value::from(repository.clone()).decorated(" ", " ");
+                *patch.get_or_insert("rev", "") = Value::from(commit.clone()).decorated(" ", " ");
             }
         }
         Ok::<_, String>(())
     })?;
 
-    fs::write(&cargo_toml, doc.to_string_in_original_order())
+    fs::write(&cargo_toml, doc.to_string())
         .map_err(|e| format!("Failed to write to `{}`: {:?}", cargo_toml.display(), e))
 }
