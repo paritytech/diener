@@ -45,6 +45,15 @@ diener patch --crates-to-patch ../path/to/substrate/checkout --substrate
 This subcommand can be compared to `.cargo/config` without using a deprecated
 feature of Cargo ;)
 
+### check-features
+
+The `check-features` subcommand checks all `Cargo.toml` files in a given folder for
+dependencies that have `default-features = false` but are not part of the `std` feature.
+
+```
+diener check-features
+```
+
 ## License
 
 Licensed under either of
@@ -62,6 +71,7 @@ use structopt::{
     StructOpt,
 };
 
+mod check_features;
 mod patch;
 mod update;
 
@@ -78,6 +88,9 @@ enum SubCommands {
     /// given cargo workspace. Essentially this is the same as using
     /// `.cargo/config`, but using a non-deprecated way.
     Patch(patch::Patch),
+    /// Check all `Cargo.toml` files at a given path for dependencies that have
+    /// `default-features = false` but are not part of the `std` feature.
+    CheckFeatures(check_features::CheckFeatures),
 }
 
 /// Cli options of Diener
@@ -97,5 +110,6 @@ fn main() -> Result<(), String> {
     match Options::from_args().subcommand {
         SubCommands::Update(update) => update.run(),
         SubCommands::Patch(patch) => patch.run(),
+        SubCommands::CheckFeatures(check) => check.run(),
     }
 }
