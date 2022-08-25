@@ -1,0 +1,192 @@
+# This workflow runs on every push and checks whether everything looks good
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  linux:
+    env:
+      TARGET_DIR: target/release
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+          components: rustfmt, clippy
+
+      - name: Install cargo deb
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-deb
+
+      - name: Build debian package
+        shell: bash
+        run: |
+          cargo deb -p diener -o "diener_linux_amd64.deb"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: linux
+          path: |
+            diener_linux_amd64.deb
+
+  macos:
+    env:
+      TARGET_DIR: target/production
+
+    runs-on: macos-10.15
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Get Release Version
+        run: |
+          echo GITHUB_REF=$GITHUB_REF
+          RELEASE_VERSION=${GITHUB_REF#refs/*/}
+          RAW_VERSION=${RELEASE_VERSION:1}
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
+          echo "RAW_VERSION=$RAW_VERSION" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Check tooling
+        shell: bash
+        run: |
+          tar --version
+          shasum --version
+          cargo --version
+          rustc --version
+
+      - name: Build MacOS binary
+        run: |
+          cargo build --locked --profile production
+          ls -al "${{ env.TARGET_DIR }}/diener"
+
+      - name: Check binary
+        env:
+          BINARY: "${{ env.TARGET_DIR }}/diener"
+        run: |
+          file $BINARY
+          $BINARY --version
+          $BINARY --help
+
+      - name: Compress & sha256
+        run: |
+          tar -czf ${{ env.TARGET_DIR }}/diener_macos.tar.gz -C ${{ env.TARGET_DIR }} diener
+          SHA256=$(shasum -a 256 ${{ env.TARGET_DIR }}/diener_macos.tar.gz | awk '{ print $1}' | tee ${{ env.TARGET_DIR }}/diener_macos.tar.gz.sha256)
+          echo SHA256: $SHA256
+          echo "SHA256=$SHA256" >> $GITHUB_ENV
+
+      - name: Upload MacOS artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos
+          path: |
+            ${{ env.TARGET_DIR }}/diener_macos.tar.gz
+            ${{ env.TARGET_DIR }}/diener_macos.tar.gz.sha256
+
+      - name: Install tera MacOS binary v0.1.3
+        run: |
+          URL=https://github.com/chevdor/tera-cli/releases/download/v0.1.3/tera-macos-v0.1.3.tar.gz
+          wget $URL
+          tar xvf tera-macos-v0.1.3.tar.gz -C /usr/local/bin
+          tera --version
+
+      # We do that before checking out master (in case we were not in master already)
+      - name: Prepare new Formula
+        env:
+          NAME: Diener
+          DESCRIPTION: "dependency diener is a tool for easily changing Substrate or Polkadot dependency versions"
+          SITE: https://github.com
+          REPO: paritytech/diener
+          SHA256: ${{env.SHA256}}
+          VERSION: ${{env.RAW_VERSION}}
+        run: |
+          tera --version
+          tera --template templates/formula.rb --env-only > $HOME/diener.rb
+          cat $HOME/diener.rb
+
+      - name: Update Homebrew Formula
+        run: |
+          cp -f $HOME/diener.rb Formula/diener.rb
+          git config --global user.name 'CI'
+          git config --global user.email 'nobody@users.noreply.github.com'
+          git commit Formula/diener.rb -m "build: new homebrew formula for ${{ env.RELEASE_VERSION }}"
+          git push origin HEAD:master
+
+  create_draft:
+    needs: ["linux", "macos"]
+    name: Create Draft
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.create-release.outputs.html_url }}
+      asset_upload_url: ${{ steps.create-release.outputs.upload_url }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Get Release Version
+        run: |
+          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v2
+
+      - name: Create Release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.RELEASE_VERSION }}
+          release_name: Diener ${{ env.RELEASE_VERSION }} (${{ env.SHORT_SHA }})
+          draft: true
+
+  publish-binaries:
+    runs-on: ubuntu-latest
+    needs: ["create_draft"]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Get Release Version
+        run: |
+          echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v2
+
+      - name: Upload Debian package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_draft.outputs.asset_upload_url }}
+          asset_path: "linux/diener_linux_amd64.deb"
+          asset_name: "diener_linux_amd64_${{ env.RELEASE_VERSION }}.deb"
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload MacOS archive
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_draft.outputs.asset_upload_url }}
+          asset_path: "macos/diener_macos.tar.gz"
+          asset_name: "diener_macos_${{ env.RELEASE_VERSION }}.tar.gz"
+          asset_content_type: application/gzip
