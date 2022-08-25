@@ -28,7 +28,7 @@ diener update --branch diener-branch-2
 
 Diener also supports `tag` and `rev` as arguments.
 
-If a depdendency is belongs to Substrate or Polkadot is currently done by looking at the git url.
+If a dependency is belongs to Substrate or Polkadot is currently done by looking at the git url.
 It also only works for repos called `substrate` or `polkadot`.
 
 #### Patch
