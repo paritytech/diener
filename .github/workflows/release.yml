@@ -1,4 +1,4 @@
-# This workflow runs on every push and checks whether everything looks good
+# This workflow runs on every push
 
 name: Release
 
