@@ -127,7 +127,7 @@ jobs:
         run: |
           cp -f $HOME/diener.rb Formula/diener.rb
           git config --global user.name 'CI'
-          git config --global user.email 'nobody@users.noreply.github.com'
+          git config --global user.email 'foo@example.invalid'
           git commit Formula/diener.rb -m "build: new homebrew formula for ${{ env.RELEASE_VERSION }}"
           git push origin HEAD:master
 
