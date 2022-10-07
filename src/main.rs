@@ -64,6 +64,7 @@ use structopt::{
 
 mod patch;
 mod update;
+mod workspacify;
 
 /// diener is a tool for easily finding and changing Substrate or Polkadot dependency versions.
 /// diener will not modified the cargo.lock file but update specific dependencies in the Cargo.toml files or the project.
@@ -78,6 +79,15 @@ enum SubCommands {
     /// given cargo workspace. Essentially this is the same as using
     /// `.cargo/config`, but using a non-deprecated way.
     Patch(patch::Patch),
+    /// Creates a workspace from the supplied directory tree.
+    ///
+    /// This can be ran on existing workspaces to make sure everything is properly setup.
+    ///
+    /// - Every dependency residing in the tree will be rewritten into a `path` dependency.
+    /// - The top level `Cargo.toml` `workspace.members` array will be filled with all crates.
+    ///     - It will also be sorted alphabetically
+    /// - The path dependency entries will be sorted into a canonical order.
+    Workspacify(workspacify::Workspacify),
 }
 
 /// Cli options of Diener
@@ -90,12 +100,13 @@ struct Options {
     subcommand: SubCommands,
 }
 
-fn main() -> Result<(), String> {
+fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     log::info!("Running {} v{}", crate_name!(), crate_version!());
 
     match Options::from_args().subcommand {
         SubCommands::Update(update) => update.run(),
         SubCommands::Patch(patch) => patch.run(),
+        SubCommands::Workspacify(workspacify) => workspacify.run(),
     }
 }
