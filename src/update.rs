@@ -1,7 +1,7 @@
 use git_url_parse::GitUrl;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
-use toml_edit::{decorated, Document, InlineTable};
+use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
 
 /// Which dependencies should be rewritten?
@@ -159,7 +159,7 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
     };
 
     if let Some(new_git) = new_git {
-        *dep.get_or_insert("git", "") = decorated(new_git.as_str().into(), " ", "");
+        *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
     }
 
     dep.remove("tag");
@@ -168,13 +168,13 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
 
     match version {
         Version::Tag(tag) => {
-            *dep.get_or_insert(" tag", "") = decorated(tag.as_str().into(), " ", " ");
+            *dep.get_or_insert(" tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
         }
         Version::Branch(branch) => {
-            *dep.get_or_insert(" branch", "") = decorated(branch.as_str().into(), " ", " ");
+            *dep.get_or_insert(" branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
         }
         Version::Rev(rev) => {
-            *dep.get_or_insert(" rev", "") = decorated(rev.as_str().into(), " ", " ");
+            *dep.get_or_insert(" rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
         }
     }
     log::debug!("  updated: {:?} <= {}", version, name);
@@ -211,6 +211,6 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Resu
                 })
         });
 
-    fs::write(&path, toml_doc.to_string_in_original_order())
+    fs::write(&path, toml_doc.to_string())
         .map_err(|e| format!("Failed to write to `{}`: {:?}", path.display(), e))
 }
