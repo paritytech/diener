@@ -36,7 +36,7 @@ impl Workspacify {
         let mut duplicates = Vec::new();
         for manifest in manifest_iter(&workspace) {
             if let Some(name) = package_name(&manifest)? {
-                if let Some(_) = packages.insert(name.clone(), manifest.clone()) {
+                if packages.insert(name.clone(), manifest.clone()).is_some() {
                     duplicates.push(name);
                 }
             }
@@ -65,7 +65,7 @@ fn manifest_iter(workspace: &Path) -> impl Iterator<Item = PathBuf> {
         .follow_links(false)
         .into_iter()
         .filter_entry(|e| {
-            !(e.file_name() == "target" || e.file_name().to_string_lossy().starts_with("."))
+            !(e.file_name() == "target" || e.file_name().to_string_lossy().starts_with('.'))
         })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file() && e.file_name().to_string_lossy() == "Cargo.toml")
@@ -155,7 +155,7 @@ fn handle_dep(
         .1
         .get("package")
         .and_then(|p| p.as_str())
-        .unwrap_or(dep.0.get());
+        .unwrap_or_else(|| dep.0.get());
 
     // dependency exists within this workspace
     let (dependee, dependency) = if let Some(path) = packages.get(name) {
