@@ -64,6 +64,9 @@ fn manifest_iter(workspace: &Path) -> impl Iterator<Item = PathBuf> {
     WalkDir::new(workspace)
         .follow_links(false)
         .into_iter()
+        .filter_entry(|e| {
+            !(e.file_name() == "target" || e.file_name().to_string_lossy().starts_with("."))
+        })
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file() && e.file_name().to_string_lossy() == "Cargo.toml")
         .map(|dir| dir.into_path())
