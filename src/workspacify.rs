@@ -37,16 +37,19 @@ impl Workspacify {
 
         // Create a mapping of package_name -> manifest
         let mut packages = HashMap::<String, PathBuf>::new();
-        let mut duplicates = Vec::new();
+        let mut duplicates = HashMap::<String, Vec<String>>::new();
         for manifest in manifest_iter(&workspace) {
             if let Some(name) = package_name(&manifest)? {
-                if packages.insert(name.clone(), manifest.clone()).is_some() {
-                    duplicates.push(name);
+                if let Some(existing) = packages.insert(name.clone(), manifest.clone()) {
+                    duplicates
+                        .entry(name)
+                        .or_insert_with(|| vec![existing.display().to_string()])
+                        .push(manifest.display().to_string());
                 }
             }
         }
         if !duplicates.is_empty() {
-            bail!("Duplicate crates detected: {:?}", duplicates);
+            bail!("Duplicate crates detected:\n{:#?}", duplicates);
         }
 
         // make sure all crates are recorded in the workspace manifest
