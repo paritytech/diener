@@ -83,7 +83,7 @@ fn package_name(path: &Path) -> Result<Option<String>> {
 }
 
 fn update_workspace_members(workspace: &Path, packages: &HashMap<String, PathBuf>) -> Result<()> {
-    let manifest = {
+    let manifest = workspace.join("Cargo.toml");
         let mut workspace = workspace.to_path_buf();
         workspace.push("Cargo.toml");
         workspace
@@ -91,7 +91,7 @@ fn update_workspace_members(workspace: &Path, packages: &HashMap<String, PathBuf
 
     // turn packages into a sorted array of pathes
     let members: Array = {
-        let mut members: Vec<_> = packages.iter().map(|(_, path)| path).collect();
+        let mut members: Vec<_> = packages.values().collect();
         members.sort_unstable();
         let mut members: Array = members
             .iter()
@@ -101,7 +101,7 @@ fn update_workspace_members(workspace: &Path, packages: &HashMap<String, PathBuf
                     .expect(FILES_HAVE_PARENTS)
                     .strip_prefix(workspace)
                     .expect(FILES_HAVE_PARENTS)
-                    .to_string_lossy()
+                   .diplay().to_string()
                     .into_owned();
                 let mut formatted = Formatted::new(member);
                 formatted.decor_mut().set_prefix("\n\t");
