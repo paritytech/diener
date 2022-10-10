@@ -1,3 +1,4 @@
+use anyhow::{anyhow, bail, Context, Error, Result};
 use std::{
     env::current_dir,
     fs,
@@ -5,7 +6,7 @@ use std::{
     str::FromStr,
 };
 use structopt::StructOpt;
-use toml_edit::{decorated, Document, Item, Value};
+use toml_edit::{Document, Item, Value};
 
 enum PatchTarget {
     Crates,
@@ -28,15 +29,14 @@ impl PointTo {
         point_to_git: Option<String>,
         point_to_git_branch: Option<String>,
         point_to_git_commit: Option<String>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self> {
         if let Some(repository) = point_to_git {
             if let Some(branch) = point_to_git_branch {
                 Ok(Self::GitBranch { repository, branch })
             } else if let Some(commit) = point_to_git_commit {
                 Ok(Self::GitCommit { repository, commit })
             } else {
-                Err("`--point-to-git-branch` or `--point-to-git-commit` are required when `--point-to-git` is passed!"
-					.into())
+                bail!("`--point-to-git-branch` or `--point-to-git-commit` are required when `--point-to-git` is passed!");
             }
         } else {
             Ok(Self::Path)
@@ -152,20 +152,19 @@ pub struct Patch {
 
 impl Patch {
     /// Run this subcommand.
-    pub fn run(self) -> Result<(), String> {
+    pub fn run(self) -> Result<()> {
         let patch_target = self.patch_target()?;
-
         let path = self
             .path
             .map(|p| {
                 if !p.exists() {
-                    Err(format!("Given --path=`{}` does not exist!", p.display()))
+                    bail!("Given --path=`{}` does not exist!", p.display());
                 } else {
                     Ok(p)
                 }
             })
             .unwrap_or_else(|| {
-                current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
+                current_dir().with_context(|| anyhow!("Working directory is invalid."))
             })?;
 
         // Get the path to the `Cargo.toml` where we need to add the patches
@@ -185,7 +184,7 @@ impl Patch {
         )
     }
 
-    fn patch_target(&self) -> Result<PatchTarget, String> {
+    fn patch_target(&self) -> Result<PatchTarget> {
         if let Some(ref custom) = self.target {
             Ok(PatchTarget::Custom(custom.clone()))
         } else if self.substrate {
@@ -207,13 +206,12 @@ impl Patch {
         } else if self.crates {
             Ok(PatchTarget::Crates)
         } else {
-            Err("You need to pass `--target`, `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--crates`!"
-				.into())
+            bail!("You need to pass `--target`, `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--crates`!");
         }
     }
 }
 
-fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
+fn workspace_root_package(path: &Path) -> Result<PathBuf> {
     if path.ends_with("Cargo.toml") {
         return Ok(path.into());
     }
@@ -221,31 +219,17 @@ fn workspace_root_package(path: &Path) -> Result<PathBuf, String> {
     let metadata = cargo_metadata::MetadataCommand::new()
         .current_dir(path)
         .exec()
-        .map_err(|e| {
-            format!(
-                "Failed to get cargo metadata for workspace `{}`: {:?}",
-                path.display(),
-                e
-            )
-        })?;
+        .with_context(|| "Failed to get cargo metadata for workspace")?;
 
     Ok(metadata.workspace_root.join("Cargo.toml").into())
 }
 
 /// Returns all package names of the given `workspace`.
-fn workspace_packages(
-    workspace: &Path,
-) -> Result<impl Iterator<Item = cargo_metadata::Package>, String> {
+fn workspace_packages(workspace: &Path) -> Result<impl Iterator<Item = cargo_metadata::Package>> {
     let metadata = cargo_metadata::MetadataCommand::new()
         .current_dir(workspace)
         .exec()
-        .map_err(|e| {
-            format!(
-                "Failed to get cargo metadata for workspace `{}`: {:?}",
-                workspace.display(),
-                e
-            )
-        })?;
+        .with_context(|| "Failed to get cargo metadata for workspace.")?;
 
     Ok(metadata
         .workspace_members
@@ -259,23 +243,17 @@ fn add_patches_for_packages(
     patch_target: &PatchTarget,
     mut packages: impl Iterator<Item = cargo_metadata::Package>,
     point_to: PointTo,
-) -> Result<(), String> {
+) -> Result<()> {
     let content = fs::read_to_string(cargo_toml)
-        .map_err(|e| format!("Could not read `{}`: {:?}", cargo_toml.display(), e))?;
-    let mut doc = Document::from_str(&content).map_err(|e| {
-        format!(
-            "Failed to parse `{}` as `Cargo.toml`: {:?}",
-            cargo_toml.display(),
-            e
-        )
-    })?;
+        .with_context(|| anyhow!("Failed to read manifest at {}", cargo_toml.display()))?;
+    let mut doc = Document::from_str(&content).context("Failed to parse Cargo.toml")?;
 
     let patch_table = doc
         .as_table_mut()
         .entry("patch")
         .or_insert(Item::Table(Default::default()))
         .as_table_mut()
-        .ok_or("Patch table isn't a toml table!")?;
+        .ok_or_else(|| anyhow!("Patch table isn't a toml table!"))?;
 
     patch_table.set_implicit(true);
 
@@ -283,7 +261,7 @@ fn add_patches_for_packages(
         .entry(&patch_target.as_string())
         .or_insert(Item::Table(Default::default()))
         .as_table_mut()
-        .ok_or("Patch target table isn't a toml table!")?;
+        .ok_or_else(|| anyhow!("Patch target table isn't a toml table!"))?;
 
     packages.try_for_each(|mut p| {
         log::info!("Adding patch for `{}`.", p.name);
@@ -292,10 +270,7 @@ fn add_patches_for_packages(
             .entry(&p.name)
             .or_insert(Item::Value(Value::InlineTable(Default::default())))
             .as_inline_table_mut()
-            .ok_or(format!(
-                "Patch entry for `{}` isn't an inline table!",
-                p.name
-            ))?;
+            .ok_or_else(|| anyhow!("Patch entry for `{}` isn't an inline table!", p.name))?;
 
         if p.manifest_path.ends_with("Cargo.toml") {
             p.manifest_path.pop();
@@ -306,20 +281,23 @@ fn add_patches_for_packages(
         match &point_to {
             PointTo::Path => {
                 *patch.get_or_insert("path", "") =
-                    decorated(path.display().to_string().into(), " ", " ");
+                    Value::from(path.display().to_string()).decorated(" ", " ");
             }
             PointTo::GitBranch { repository, branch } => {
-                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
-                *patch.get_or_insert("branch", "") = decorated(branch.clone().into(), " ", " ");
+                *patch.get_or_insert("git", "") =
+                    Value::from(repository.clone()).decorated(" ", " ");
+                *patch.get_or_insert("branch", "") =
+                    Value::from(branch.clone()).decorated(" ", " ");
             }
             PointTo::GitCommit { repository, commit } => {
-                *patch.get_or_insert("git", "") = decorated(repository.clone().into(), " ", " ");
-                *patch.get_or_insert("rev", "") = decorated(commit.clone().into(), " ", " ");
+                *patch.get_or_insert("git", "") =
+                    Value::from(repository.clone()).decorated(" ", " ");
+                *patch.get_or_insert("rev", "") = Value::from(commit.clone()).decorated(" ", " ");
             }
         }
-        Ok::<_, String>(())
+        Ok::<_, Error>(())
     })?;
 
-    fs::write(&cargo_toml, doc.to_string_in_original_order())
-        .map_err(|e| format!("Failed to write to `{}`: {:?}", cargo_toml.display(), e))
+    fs::write(&cargo_toml, doc.to_string())
+        .with_context(|| anyhow!("Failed to write manifest to {}", cargo_toml.display()))
 }

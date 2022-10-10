@@ -1,7 +1,8 @@
+use anyhow::{bail, ensure, Context, Result};
 use git_url_parse::GitUrl;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
-use toml_edit::{decorated, Document, InlineTable};
+use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
 
 /// Which dependencies should be rewritten?
@@ -68,7 +69,7 @@ pub struct Update {
 
 impl Update {
     /// Convert the options into the parts `Rewrite`, `Version`, `Option<PathBuf>`.
-    fn into_parts(self) -> Result<(Rewrite, Version, Option<PathBuf>), String> {
+    fn into_parts(self) -> Result<(Rewrite, Version, Option<PathBuf>)> {
         let version = if let Some(branch) = self.branch {
             Version::Branch(branch)
         } else if let Some(rev) = self.rev {
@@ -76,14 +77,12 @@ impl Update {
         } else if let Some(tag) = self.tag {
             Version::Tag(tag)
         } else {
-            return Err("You need to pass `--branch`, `--tag` or `--rev`".into());
+            bail!("You need to pass `--branch`, `--tag` or `--rev`");
         };
 
         let rewrite = if self.all {
             if self.git.is_some() {
-                return Err(
-					"You need to pass `--substrate`, `--polkadot`, `--cumulus` or `--beefy` for `--git`.".into()
-				);
+                bail!("You need to pass `--substrate`, `--polkadot`, `--cumulus` or `--beefy` for `--git`.");
             } else {
                 Rewrite::All
             }
@@ -96,24 +95,24 @@ impl Update {
         } else if self.cumulus {
             Rewrite::Cumulus(self.git)
         } else {
-            return Err(
-				"You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.".into()
-			);
+            bail!("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.");
         };
 
         Ok((rewrite, version, self.path))
     }
 
     /// Run this subcommand.
-    pub fn run(self) -> Result<(), String> {
+    pub fn run(self) -> Result<()> {
         let (rewrite, version, path) = self.into_parts()?;
 
-        let path = path.map(Ok).unwrap_or_else(|| {
-            current_dir().map_err(|e| format!("Working directory is invalid: {:?}", e))
-        })?;
-        if !path.is_dir() {
-            return Err(format!("Path '{}' is not a directory.", path.display()));
-        }
+        let path = path
+            .map(Ok)
+            .unwrap_or_else(|| current_dir().with_context(|| "Working directory is invalid."))?;
+        ensure!(
+            path.is_dir(),
+            "Path '{}' is not a directory.",
+            path.display()
+        );
 
         let is_hidden = |entry: &DirEntry| {
             entry
@@ -159,7 +158,7 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
     };
 
     if let Some(new_git) = new_git {
-        *dep.get_or_insert("git", "") = decorated(new_git.as_str().into(), " ", "");
+        *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
     }
 
     dep.remove("tag");
@@ -168,13 +167,13 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
 
     match version {
         Version::Tag(tag) => {
-            *dep.get_or_insert(" tag", "") = decorated(tag.as_str().into(), " ", " ");
+            *dep.get_or_insert(" tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
         }
         Version::Branch(branch) => {
-            *dep.get_or_insert(" branch", "") = decorated(branch.as_str().into(), " ", " ");
+            *dep.get_or_insert(" branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
         }
         Version::Rev(rev) => {
-            *dep.get_or_insert(" rev", "") = decorated(rev.as_str().into(), " ", " ");
+            *dep.get_or_insert(" rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
         }
     }
     log::debug!("  updated: {:?} <= {}", version, name);
@@ -183,13 +182,10 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
 /// Handle a given `Cargo.toml`.
 ///
 /// This means scanning all dependencies and rewrite the requested onces.
-fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Result<(), String> {
+fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Result<()> {
     log::info!("Processing: {}", path.display());
 
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to open `{}`: {:?}", path.display(), e))?;
-    let mut toml_doc = Document::from_str(&content)
-        .map_err(|e| format!("Failed to parse as toml doc: {:?}", e))?;
+    let mut toml_doc = Document::from_str(&fs::read_to_string(&path)?)?;
 
     // Iterate over all tables in the document
     toml_doc
@@ -211,6 +207,6 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Resu
                 })
         });
 
-    fs::write(&path, toml_doc.to_string_in_original_order())
-        .map_err(|e| format!("Failed to write to `{}`: {:?}", path.display(), e))
+    fs::write(&path, toml_doc.to_string())?;
+    Ok(())
 }
