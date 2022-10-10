@@ -15,6 +15,10 @@ const FILES_HAVE_PARENTS: &str = "This is a file. Every file has a parent; qed";
 
 #[derive(Debug, StructOpt)]
 pub struct Workspacify {
+    /// The path to the workspace root directory.
+    ///
+    /// This is the directory where your workspace `Cargo.toml` is or should be located.
+    /// Uses the working directory if none is supplied.
     #[structopt(long)]
     path: Option<PathBuf>,
 }
@@ -52,8 +56,13 @@ impl Workspacify {
         // transform every package manifest to point to the correct place
         // and use the correct version
         for (name, path) in packages.iter() {
-            rewrite_manifest(path, &packages)
-                .with_context(|| anyhow!("Failed to rewrite manifest for {}", name))?;
+            rewrite_manifest(path, &packages).with_context(|| {
+                anyhow!(
+                    "Failed to rewrite manifest for {} at {}",
+                    name,
+                    path.display()
+                )
+            })?;
         }
 
         Ok(())
@@ -73,7 +82,7 @@ fn manifest_iter(workspace: &Path) -> impl Iterator<Item = PathBuf> {
 }
 
 fn package_name(path: &Path) -> Result<Option<String>> {
-    let ret = read_toml(path)?
+    let ret = read_toml(path, false)?
         .get("package")
         .and_then(|p| p.as_table())
         .and_then(|p| p.get("name"))
@@ -96,7 +105,7 @@ fn update_workspace_members(workspace: &Path, packages: &HashMap<String, PathBuf
                     .parent()
                     .expect(FILES_HAVE_PARENTS)
                     .strip_prefix(workspace)
-                    .expect(FILES_HAVE_PARENTS)
+                    .expect("All packages are within the workspace root dir; qed")
                     .display()
                     .to_string();
                 let mut formatted = Formatted::new(member);
@@ -109,29 +118,18 @@ fn update_workspace_members(workspace: &Path, packages: &HashMap<String, PathBuf
         members
     };
 
-    // create the workspace manifest if it does't exist
-    let mut content = String::new();
-    OpenOptions::new()
-        .create(true)
-        .write(true)
-        .read(true)
-        .open(&manifest)
-        .with_context(|| anyhow!("Failed to to open {}", manifest.display()))?
-        .read_to_string(&mut content)
-        .with_context(|| "Failed to read workspace manifest")?;
-
-    let mut toml = Document::from_str(&content)?;
+    let mut toml = read_toml(&manifest, true).context("Failed to parse workspace manifest")?;
     toml.entry("workspace")
         .or_insert(Item::Table(Table::new()))
         .as_table_mut()
         .ok_or_else(|| anyhow!("`workspace` is not a table"))?
         .insert("members", value(members));
 
-    Ok(fs::write(&manifest, toml.to_string())?)
+    fs::write(&manifest, toml.to_string()).context("Failed to write workspace manifest")
 }
 
 fn rewrite_manifest(path: &Path, packages: &HashMap<String, PathBuf>) -> Result<()> {
-    let mut toml = read_toml(path)?;
+    let mut toml = read_toml(path, false)?;
 
     toml.iter_mut()
         .filter(|(k, _)| k.contains("dependencies"))
@@ -140,7 +138,8 @@ fn rewrite_manifest(path: &Path, packages: &HashMap<String, PathBuf>) -> Result<
         .filter_map(|dep| dep.1.as_inline_table_mut().map(|v| (dep.0, v)))
         .try_for_each(|dep| handle_dep((dep.0, dep.1, path), packages))?;
 
-    Ok(fs::write(&path, toml.to_string())?)
+    fs::write(&path, toml.to_string())
+        .with_context(|| anyhow!("Failed to write manifest to {}", path.display()))
 }
 
 fn handle_dep(
@@ -181,9 +180,19 @@ fn handle_dep(
     Ok(())
 }
 
-fn read_toml(path: &Path) -> Result<Document> {
-    let content = fs::read_to_string(path)?;
-    Ok(Document::from_str(&content)?)
+fn read_toml(path: &Path, create: bool) -> Result<Document> {
+    let mut content = String::new();
+    OpenOptions::new()
+        .read(true)
+        .create(create)
+        .write(create)
+        .open(path)
+        .with_context(|| anyhow!("Failed to to open manifest at: {}", path.display()))?
+        .read_to_string(&mut content)
+        .with_context(|| anyhow!("Failed to to read manifest at: {}", path.display()))?;
+
+    Document::from_str(&content)
+        .with_context(|| anyhow!("Failed to to parse manifest at: {}", path.display()))
 }
 
 fn dep_key_order(dep_key: &str) -> u32 {

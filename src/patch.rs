@@ -244,8 +244,9 @@ fn add_patches_for_packages(
     mut packages: impl Iterator<Item = cargo_metadata::Package>,
     point_to: PointTo,
 ) -> Result<()> {
-    let content = fs::read_to_string(cargo_toml)?;
-    let mut doc = Document::from_str(&content).with_context(|| "Failed to parse Cargo.toml")?;
+    let content = fs::read_to_string(cargo_toml)
+        .with_context(|| anyhow!("Failed to read manifest at {}", cargo_toml.display()))?;
+    let mut doc = Document::from_str(&content).context("Failed to parse Cargo.toml")?;
 
     let patch_table = doc
         .as_table_mut()
@@ -297,5 +298,6 @@ fn add_patches_for_packages(
         Ok::<_, Error>(())
     })?;
 
-    Ok(fs::write(&cargo_toml, doc.to_string())?)
+    fs::write(&cargo_toml, doc.to_string())
+        .with_context(|| anyhow!("Failed to write manifest to {}", cargo_toml.display()))
 }
