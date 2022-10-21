@@ -147,7 +147,7 @@ jobs:
           echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+      - uses: actions/download-artifact@9782bd6a9848b53b110e712e20e42d89988822b7
 
       - name: Create Release
         id: create-release
@@ -169,7 +169,7 @@ jobs:
           echo "RELEASE_VERSION=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
           echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
-      - uses: actions/download-artifact@fb598a63ae348fa914e94cd0ff38f362e927b741
+      - uses: actions/download-artifact@9782bd6a9848b53b110e712e20e42d89988822b7
 
       - name: Upload Debian package
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5
