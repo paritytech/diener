@@ -298,6 +298,6 @@ fn add_patches_for_packages(
         Ok::<_, Error>(())
     })?;
 
-    fs::write(&cargo_toml, doc.to_string())
+    fs::write(cargo_toml, doc.to_string())
         .with_context(|| anyhow!("Failed to write manifest to {}", cargo_toml.display()))
 }

@@ -141,7 +141,7 @@ fn rewrite_manifest(path: &Path, packages: &HashMap<String, PathBuf>) -> Result<
         .filter_map(|dep| dep.1.as_inline_table_mut().map(|v| (dep.0, v)))
         .try_for_each(|dep| handle_dep((dep.0, dep.1, path), packages))?;
 
-    fs::write(&path, toml.to_string())
+    fs::write(path, toml.to_string())
         .with_context(|| anyhow!("Failed to write manifest to {}", path.display()))
 }
 
