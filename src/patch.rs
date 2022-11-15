@@ -46,11 +46,11 @@ impl PointTo {
 
 impl PatchTarget {
     /// Returns the patch target in a toml compatible format.
-    fn as_string(&self) -> String {
+    fn as_str(&self) -> &str {
         match self {
-            Self::Crates => "crates-io".into(),
-            Self::Git(url) => format!("\"{}\"", url),
-            Self::Custom(custom) => format!("\"{}\"", custom),
+            Self::Crates => "crates-io",
+            Self::Git(url) => url,
+            Self::Custom(custom) => custom,
         }
     }
 }
@@ -258,7 +258,7 @@ fn add_patches_for_packages(
     patch_table.set_implicit(true);
 
     let patch_target_table = patch_table
-        .entry(&patch_target.as_string())
+        .entry(patch_target.as_str())
         .or_insert(Item::Table(Default::default()))
         .as_table_mut()
         .ok_or_else(|| anyhow!("Patch target table isn't a toml table!"))?;
@@ -298,6 +298,6 @@ fn add_patches_for_packages(
         Ok::<_, Error>(())
     })?;
 
-    fs::write(&cargo_toml, doc.to_string())
+    fs::write(cargo_toml, doc.to_string())
         .with_context(|| anyhow!("Failed to write manifest to {}", cargo_toml.display()))
 }
