@@ -167,13 +167,13 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
 
     match version {
         Version::Tag(tag) => {
-            *dep.get_or_insert(" tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
+            *dep.get_or_insert("tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
         }
         Version::Branch(branch) => {
-            *dep.get_or_insert(" branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
+            *dep.get_or_insert("branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
         }
         Version::Rev(rev) => {
-            *dep.get_or_insert(" rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
+            *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
         }
     }
     log::debug!("  updated: {:?} <= {}", version, name);
