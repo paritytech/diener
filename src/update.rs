@@ -165,6 +165,10 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
     dep.remove("branch");
     dep.remove("rev");
 
+    // Workspace dependencies cannot use .tag, .branch or .rev
+    // Turn the workspace dependency into a normal dependency before patching it
+    *dep.remove("workspace");
+
     match version {
         Version::Tag(tag) => {
             *dep.get_or_insert("tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
