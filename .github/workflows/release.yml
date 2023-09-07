@@ -35,7 +35,7 @@ jobs:
           cargo deb -p diener -o "diener_linux_amd64.deb"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
         with:
           name: linux
           path: |
@@ -95,7 +95,7 @@ jobs:
           echo "SHA256=$SHA256" >> $GITHUB_ENV
 
       - name: Upload MacOS artifacts
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32
         with:
           name: macos
           path: |
