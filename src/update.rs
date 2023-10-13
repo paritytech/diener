@@ -1,4 +1,4 @@
-use anyhow::{bail, ensure, Context, Result, anyhow};
+use anyhow::{bail, ensure, Context, Result, anyhow, Ok};
 use git_url_parse::GitUrl;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
@@ -73,12 +73,12 @@ pub struct Update {
     #[structopt(long, conflicts_with_all = &[ "rev", "branch", "version" ])]
     tag: Option<String>,
 
-    /// The `version` that the dependencies should use.
-    #[structopt(long, conflicts_with_all = &[ "rev", "branch", "tag" ])]
+    /// The `version` source the crates should be updated from.
+    #[structopt(long, conflicts_with_all = &[ "git" ])]
     version: Option<String>,
 
     /// Rewrite the `git` url to the give one.
-    #[structopt(long)]
+    #[structopt(long, conflicts_with_all = &[ "version" ])]
     git: Option<String>,
 }
 
@@ -91,14 +91,14 @@ impl Update {
             Key::Rev(rev)
         } else if let Some(tag) = self.tag {
             Key::Tag(tag)
-        } else if let Some(version) = self.version {
+        } else if let Some(version) = self.version.clone() {
             let source = get_version_source(&version)?;
             Key::Version(source)
         } else {
             bail!("You need to pass `--branch`, `--tag`, `--rev` or `--version`.");
         };
 
-        let rewrite = if self.all {
+        let rewrite = if self.all || self.version.is_some() {
             if self.git.is_some() {
                 bail!("You need to pass `--substrate`, `--polkadot`, `--cumulus` or `--beefy` for `--git`.");
             } else {
@@ -156,40 +156,39 @@ impl Update {
 ///
 /// This directly modifies the given `dep` in the requested way.
 fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: &Key) -> Result<()> {
-    // let git = if let Some(git) = dep
-    //     .get("git")
-    //     .and_then(|v| v.as_str())
-    //     .and_then(|d| GitUrl::parse(d).ok())
-    // {
-    //     git
-    // } else {
-    //     return;
-    // };
+    // `git` source
+    if is_git_source(key) {
+        dep.remove("tag");
+        dep.remove("branch");
+        dep.remove("rev");
 
-    // let new_git = match rewrite {
-    //     Rewrite::All => &None,
-    //     Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
-    //     Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
-    //     Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
-    //     Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
-    //     _ => return,
-    // };
+        let git = if let Some(git) = dep
+            .get("git")
+            .and_then(|v| v.as_str())
+            .and_then(|d| GitUrl::parse(d).ok())
+        {
+            git
+        } else {
+            return Ok(());
+        };
 
-    // if let Some(new_git) = new_git {
-    //     *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
-    // }
+        let new_git = match rewrite {
+            Rewrite::All => &None,
+            Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
+            Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
+            Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
+            Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
+            _ => return Ok(()),
+        };
 
-    // let package = if let Some(package) = dep.get("package").and_then(|v| v.as_str()) {
-    //   version
-    // } else {
-    //     return;
-    // };
-
-    dep.remove("tag");
-    dep.remove("branch");
-    dep.remove("rev");
-    dep.remove("version");
-    dep.remove("path");
+        if let Some(new_git) = new_git {
+            *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
+        }
+    // `version` source
+    } else {
+        dep.remove("version");
+        dep.remove("path");
+    };
 
     match key {
         Key::Tag(tag) => {
@@ -242,10 +241,9 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, key: &Key) -> Result<()> {
                     let table = toml_doc[k][dn]
                         .as_inline_table_mut()
                         .expect("We filter by `is_inline_table`; qed");
-                    let a = handle_dependency(dn, table, rewrite, key);
-                    // handle_dependency(dn, table, rewrite, key);
-
-                    log::debug!("Result {:?}", a);
+                    let _ = handle_dependency(dn, table, rewrite, key).map_err(|err| {
+                        log::error!("Error handling dependency: {}", err);
+                    });
                 })
         });
 
@@ -273,33 +271,35 @@ fn get_package_version(package: &str, source: &VersionSource) -> Result<String> 
     let version = match source {
         VersionSource::CratesIO => {
             let url = format!("https://crates.io/api/v1/crates/{}", package);
-            log::debug!("URL {:?}", url);
-
-            // let body = reqwest::blocking::get(&url)?.text()?;
             let client = reqwest::blocking::Client::new();
+
             let body = client.get(&url)
-                .header(USER_AGENT, "test_crawler_diener")
+                .header(USER_AGENT, "diener_crawler")
                 .send()?.text()?;
-            log::debug!("BODY {:?}", body);
+
+            log::debug!("Crates IO plain response: {}", body);
+
             let json: serde_json::Value = serde_json::from_str(&body).map_err(|_| {
-                anyhow::anyhow!("Error trying to JSON parse the crates.io response: {}", body)
+                anyhow!("error trying to JSON parse the crates.io response: {}", body)
             })?;
-            log::debug!("JSON {:?}", json);
+
+            log::debug!("Crates IO json response: {}", json);
+
             json["crate"]["max_version"].as_str().ok_or(
-                anyhow::anyhow!("Package '{}' not found on crates.io", package)
+                anyhow!("package '{}' not found on crates.io", package)
             )?.to_string()
         }
         VersionSource::Url(url) => {
             let body = reqwest::blocking::get(url)?.text()?;
             get_package_version_from_cargo_lock_file(body, package).ok_or(
-                anyhow::anyhow!("Package '{}' not found in Cargo.lock", package)
+                anyhow!("package '{}' not found in Cargo.lock", package)
             )?
         }
         VersionSource::File(path) => {
             let path = PathBuf::from(path);
             let body = fs::read_to_string(path)?;
             get_package_version_from_cargo_lock_file(body, package).ok_or(
-                anyhow::anyhow!("Package '{}' not found in Cargo.lock", package)
+                anyhow!("package '{}' not found in Cargo.lock", package)
             )?
         }
     };
@@ -320,4 +320,11 @@ fn get_package_version_from_cargo_lock_file(body: String, package_name: &str) ->
         }
     }
     None
+}
+
+fn is_git_source(key: &Key) -> bool {
+    match key {
+        Key::Tag(_) | Key::Branch(_) | Key::Rev(_) => true,
+        _ => false,
+    }
 }
