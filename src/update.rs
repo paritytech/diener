@@ -13,6 +13,8 @@ thread_local! {
 	pub static PACKAGES_VERSION: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     /// Cargo.lock from URL or FILE sources
     pub static CARGO_LOCK: RefCell<Option<String>> = RefCell::new(None);
+    /// Excluded packages from version updating - HashMap(name, exclude)`
+    pub static EXCLUDED_PACKAGES: RefCell<HashMap<String, bool>> = RefCell::new(HashMap::new());
 }
 
 /// Which dependencies should be rewritten?
@@ -70,6 +72,10 @@ pub struct Update {
     #[structopt(long, short = "a")]
     all: bool,
 
+    /// Rewrite the `git` url to the give one.
+    #[structopt(long, conflicts_with_all = &[ "version" ])]
+    git: Option<String>,
+
     /// The `branch` that the dependencies should use.
     #[structopt(long, conflicts_with_all = &[ "rev", "tag", "version" ])]
     branch: Option<String>,
@@ -86,14 +92,14 @@ pub struct Update {
     #[structopt(long, conflicts_with_all = &[ "git" ])]
     version: Option<String>,
 
-    /// Rewrite the `git` url to the give one.
-    #[structopt(long, conflicts_with_all = &[ "version" ])]
-    git: Option<String>,
+    /// Path to a toml file with the list of dependencies to exclude from version updating.
+    #[structopt(long, requires = "version")]
+    exclude: Option<PathBuf>,
 }
 
 impl Update {
     /// Convert the options into the parts `Rewrite`, `Key`, `Option<PathBuf>`.
-    fn into_parts(self) -> Result<(Rewrite, Key, Option<PathBuf>)> {
+    fn into_parts(self) -> Result<(Rewrite, Key, Option<PathBuf>, Option<PathBuf>)> {
         let key = if let Some(branch) = self.branch {
             Key::Branch(branch)
         } else if let Some(rev) = self.rev {
@@ -125,12 +131,12 @@ impl Update {
             bail!("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.");
         };
 
-        Ok((rewrite, key, self.path))
+        Ok((rewrite, key, self.path, self.exclude))
     }
 
     /// Run this subcommand.
     pub fn run(self) -> Result<()> {
-        let (rewrite, key, path) = self.into_parts()?;
+        let (rewrite, key, path, exclude_path) = self.into_parts()?;
 
         let path = path
             .map(Ok)
@@ -148,6 +154,38 @@ impl Update {
                 .map(|s| s.starts_with('.'))
                 .unwrap_or(false)
         };
+
+        // Populate EXCLUDED_PACKAGES
+        if exclude_path.is_some() {
+            let mut exclude_doc = Document::from_str(
+                &fs::read_to_string(&exclude_path.unwrap())
+                    .map_err(|err| anyhow!("Failed trying to open exclude toml file: {}", err))?
+            )?;
+
+            exclude_doc
+                .clone()
+                .iter()
+                // filter out everything that is not a exclude table
+                .filter(|(k, _)| k.contains("exclude"))
+                .filter_map(|(k, v)| v.as_table().map(|t| (k, t)))
+                .for_each(|(k, t)| {
+                    t.iter()
+                        // Filter everything that is not an inline table (`{ foo = bar }`)
+                        .filter_map(|v| v.1.as_inline_table().map(|_| v.0))
+                        .for_each(|dn| {
+                            let table = exclude_doc[k][dn]
+                                .as_inline_table_mut()
+                                .expect("We filter by `is_inline_table`; qed");
+                            let value_package = &Value::from(dn);
+                            let read_package = value_package.as_str().expect("We just created it`; qed");
+                            let package = table.get("package").and_then(|v| v.as_str()).unwrap_or(read_package);
+                            EXCLUDED_PACKAGES.with(|r| {
+                                r.borrow_mut()
+                                    .insert(package.to_string(), true)
+                            });
+                        })
+                });
+        }
 
         WalkDir::new(path)
             .follow_links(true)
@@ -211,6 +249,15 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: 
             } else {
                 name
             };
+
+            // Ignore the excluded packages
+            if EXCLUDED_PACKAGES.with(|r| {
+                r.borrow()
+                    .get(package).cloned()
+            }).is_some() {
+                log::debug!("Package '{}' excluded from version updating", package);
+                return Ok(());
+            }
 
             let version = get_version(name, package, source)?;
             *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
