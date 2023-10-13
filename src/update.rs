@@ -291,6 +291,9 @@ fn get_package_version(package: &str, source: &VersionSource) -> Result<String> 
         }
         VersionSource::Url(url) => {
             let body = reqwest::blocking::get(url)?.text()?;
+
+            log::debug!("Url {} plain response: {}", url, body);
+
             get_package_version_from_cargo_lock_file(body, package).ok_or(
                 anyhow!("package '{}' not found in Cargo.lock", package)
             )?
