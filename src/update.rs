@@ -2,10 +2,19 @@ use anyhow::{bail, ensure, Context, Result, anyhow, Ok};
 use git_url_parse::GitUrl;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
-use toml_edit::{Document, InlineTable, Value, Item, Table};
+use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
 use reqwest::header::USER_AGENT;
 use serde_json;
+pub use std::{cell::RefCell, collections::HashMap};
+
+thread_local! {
+	/// Packages version - HashMap(name, version)`
+	pub static PACKAGES_VERSION: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    /// Cargo.lock from URL or FILE sources
+    pub static CARGO_LOCK: RefCell<Option<String>> = RefCell::new(None);
+}
+
 /// Which dependencies should be rewritten?
 #[derive(Debug, Clone)]
 enum Rewrite {
@@ -156,7 +165,7 @@ impl Update {
 ///
 /// This directly modifies the given `dep` in the requested way.
 fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: &Key) -> Result<()> {
-    // `git` source
+    // only when `git` source
     if is_git_source(key) {
         dep.remove("tag");
         dep.remove("branch");
@@ -184,10 +193,6 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: 
         if let Some(new_git) = new_git {
             *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
         }
-    // `version` source
-    } else {
-        dep.remove("version");
-        dep.remove("path");
     };
 
     match key {
@@ -201,16 +206,15 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: 
             *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
         }
         Key::Version(source) => {
-            // *dep.get_or_insert("version", "") = Value::from(ver.as_str()).decorated(" ", " ");
             let package = if let Some(package_name) = dep.get("package").and_then(|v| v.as_str()) {
                 package_name
             } else {
                 name
             };
 
-            let version = get_package_version(package, source)?;
-
+            let version = get_version(name, package, source)?;
             *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
+            dep.remove("path");
         }
     }
     log::debug!("  updated: {:?} <= {}", key, name);
@@ -251,6 +255,7 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, key: &Key) -> Result<()> {
     Ok(())
 }
 
+/// Get to source of where to get the versions from.
 fn get_version_source(version: &String) -> Result<VersionSource> {
     let source = if version.starts_with("http://") || version.starts_with("https://") {
         VersionSource::Url(version.clone())
@@ -267,41 +272,51 @@ fn get_version_source(version: &String) -> Result<VersionSource> {
     Ok(source)
 }
 
-fn get_package_version(package: &str, source: &VersionSource) -> Result<String> {
+/// Get the version of a package from a given source.
+fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String> {
     let version = match source {
         VersionSource::CratesIO => {
             let url = format!("https://crates.io/api/v1/crates/{}", package);
             let client = reqwest::blocking::Client::new();
 
             let body = client.get(&url)
-                .header(USER_AGENT, "diener_crawler")
+                .header(USER_AGENT, "diener_crawler (admin@parity.io)")
                 .send()?.text()?;
 
-            log::debug!("Crates IO plain response: {}", body);
+            log::trace!("Crates IO plain response: {}", body);
 
             let json: serde_json::Value = serde_json::from_str(&body).map_err(|_| {
                 anyhow!("error trying to JSON parse the crates.io response: {}", body)
             })?;
 
-            log::debug!("Crates IO json response: {}", json);
+            log::trace!("Crates IO json response: {}", json);
 
             json["crate"]["max_version"].as_str().ok_or(
                 anyhow!("package '{}' not found on crates.io", package)
             )?.to_string()
         }
         VersionSource::Url(url) => {
-            let body = reqwest::blocking::get(url)?.text()?;
+            let get_body = || -> Result<String> {
+                Ok(reqwest::blocking::get(url)?.text()?)
+            };
 
-            log::debug!("Url {} plain response: {}", url, body);
+            let body = get_cargo_lock(get_body)?;
 
-            get_package_version_from_cargo_lock_file(body, package).ok_or(
+            log::trace!("Url {} plain response: {}", url, body);
+
+            get_version_from_cargo_lock_file(body, package).ok_or(
                 anyhow!("package '{}' not found in Cargo.lock", package)
             )?
         }
         VersionSource::File(path) => {
-            let path = PathBuf::from(path);
-            let body = fs::read_to_string(path)?;
-            get_package_version_from_cargo_lock_file(body, package).ok_or(
+            let get_body = || -> Result<String> {
+                let path = PathBuf::from(path);
+                Ok(fs::read_to_string(path)?)
+            };
+
+            let body = get_cargo_lock(get_body)?;
+
+            get_version_from_cargo_lock_file(body, package).ok_or(
                 anyhow!("package '{}' not found in Cargo.lock", package)
             )?
         }
@@ -309,7 +324,8 @@ fn get_package_version(package: &str, source: &VersionSource) -> Result<String> 
     Ok(version)
 }
 
-fn get_package_version_from_cargo_lock_file(body: String, package_name: &str) -> Option<String> {
+/// Get the version of a package from a Cargo.lock file.
+fn get_version_from_cargo_lock_file(body: String, package_name: &str) -> Option<String> {
     let doc = body.parse::<Document>().ok()?;
     let package_table = doc["package"].as_array_of_tables()?;
 
@@ -325,6 +341,40 @@ fn get_package_version_from_cargo_lock_file(body: String, package_name: &str) ->
     None
 }
 
+/// If version exists in PACKAGES_VERSION, use it
+/// if not, get it from source and insert it into PACKAGES_VERSION
+fn get_version(name: &str, package: &str, source: &VersionSource) -> Result<String> {
+    if let Some(version) = PACKAGES_VERSION.with(|r| {
+            r.borrow()
+                .get(name).cloned()
+    }) {
+        Ok(version)
+    } else {
+        let version = get_version_by_source(package, source)?;
+        PACKAGES_VERSION.with(|r| {
+            r.borrow_mut()
+                .insert(name.to_string(), version.clone())
+        });
+        Ok(version)
+    }
+}
+
+/// If a Cargo.lock exists in CARGO_LOCK, use it
+/// if not, get it from source and insert it into CARGO_LOCK
+fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
+    if let Some(cargo_lock) = CARGO_LOCK.with(|r| {
+            r.borrow().clone()
+    }) {
+        Ok(cargo_lock)
+    } else {
+        let cargo_lock = f()?;
+        CARGO_LOCK.with(|r| {
+            r.replace(Some(cargo_lock.clone()))
+        });
+        Ok(cargo_lock)
+    }
+}
+/// Is the given `Key` a git source?
 fn is_git_source(key: &Key) -> bool {
     match key {
         Key::Tag(_) | Key::Branch(_) | Key::Rev(_) => true,
