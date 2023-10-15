@@ -92,8 +92,8 @@ pub struct Update {
     #[structopt(long, conflicts_with_all = &[ "git" ])]
     version: Option<String>,
 
-    /// Path to a toml file with the list of dependencies to exclude from version updating.
-    #[structopt(long, requires = "version")]
+    /// Path to a toml file with the list of dependencies to exclude from updating.
+    #[structopt(long)]
     exclude: Option<PathBuf>,
 }
 
@@ -166,7 +166,7 @@ impl Update {
                 .clone()
                 .iter()
                 // filter out everything that is not a exclude table
-                .filter(|(k, _)| k.contains("diener_version_exclude"))
+                .filter(|(k, _)| k.contains("diener_exclude"))
                 .filter_map(|(k, v)| v.as_table().map(|t| (k, t)))
                 .for_each(|(k, t)| {
                     t.iter()
@@ -203,65 +203,64 @@ impl Update {
 ///
 /// This directly modifies the given `dep` in the requested way.
 fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: &Key) -> Result<()> {
-    // only when `git` source
-    if is_git_source(key) {
-        dep.remove("tag");
-        dep.remove("branch");
-        dep.remove("rev");
-
-        let git = if let Some(git) = dep
-            .get("git")
-            .and_then(|v| v.as_str())
-            .and_then(|d| GitUrl::parse(d).ok())
-        {
-            git
-        } else {
-            return Ok(());
-        };
-
-        let new_git = match rewrite {
-            Rewrite::All => &None,
-            Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
-            Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
-            Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
-            Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
-            _ => return Ok(()),
-        };
-
-        if let Some(new_git) = new_git {
-            *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
-        }
+    let dep_clone = dep.clone();
+    let package = if let Some(package_name) = dep_clone.get("package").and_then(|v| v.as_str()) {
+        package_name
+    } else {
+        name
     };
+
+    // Ignore the excluded packages
+    if EXCLUDED_PACKAGES.with(|r| {
+        r.borrow()
+            .get(package).cloned()
+    }).is_some() {
+        log::debug!("Skipping update for the excluded package '{}' ", package);
+        return Ok(());
+    }
+
+    let git = if let Some(git) = dep
+        .get("git")
+        .and_then(|v| v.as_str())
+        .and_then(|d| GitUrl::parse(d).ok())
+    {
+        git
+    } else {
+        return Ok(());
+    };
+
+    let new_git = match rewrite {
+        Rewrite::All => &None,
+        Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
+        Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
+        Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
+        Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
+        _ => return Ok(()),
+    };
+
+    if let Some(new_git) = new_git {
+        *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
+    }
 
     match key {
         Key::Tag(tag) => {
+            remove_keys(dep);
             *dep.get_or_insert("tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
         }
         Key::Branch(branch) => {
+            remove_keys(dep);
             *dep.get_or_insert("branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
         }
         Key::Rev(rev) => {
+            remove_keys(dep);
             *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
         }
         Key::Version(source) => {
-            let package = if let Some(package_name) = dep.get("package").and_then(|v| v.as_str()) {
-                package_name
-            } else {
-                name
-            };
-
-            // Ignore the excluded packages
-            if EXCLUDED_PACKAGES.with(|r| {
-                r.borrow()
-                    .get(package).cloned()
-            }).is_some() {
-                log::debug!("Package '{}' excluded from version updating", package);
-                return Ok(());
-            }
-
             let version = get_version(name, package, source)?;
             *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
+            remove_keys(dep);
             dep.remove("path");
+            dep.remove("git");
         }
     }
     log::debug!("Updated: {:?} <= {}", key, name);
@@ -421,10 +420,10 @@ fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
         Ok(cargo_lock)
     }
 }
-/// Is the given `Key` a git source?
-fn is_git_source(key: &Key) -> bool {
-    match key {
-        Key::Tag(_) | Key::Branch(_) | Key::Rev(_) => true,
-        _ => false,
-    }
+
+/// Revome the `tag`, `branch` and `rev` keys from a given dependency.
+fn remove_keys(dep: &mut InlineTable) {
+    dep.remove("tag");
+    dep.remove("branch");
+    dep.remove("rev");
 }
