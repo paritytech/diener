@@ -1,8 +1,7 @@
 use anyhow::{anyhow, bail, ensure, Context, Ok, Result};
 use git_url_parse::GitUrl;
 use reqwest::header::USER_AGENT;
-use serde_json;
-pub use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap};
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
 use toml_edit::{Document, InlineTable, Value};
@@ -157,7 +156,7 @@ impl Update {
         // Populate EXCLUDED_PACKAGES
         if exclude_path.is_some() {
             let mut exclude_doc = Document::from_str(
-                &fs::read_to_string(&exclude_path.unwrap())
+                &fs::read_to_string(exclude_path.unwrap())
                     .map_err(|err| anyhow!("Failed trying to open exclude toml file: {}", err))?,
             )?;
 
@@ -332,7 +331,7 @@ fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String
             let client = reqwest::blocking::Client::new();
 
             let body = client
-                .get(&url)
+                .get(url)
                 .header(USER_AGENT, "diener_crawler (admin@parity.io)")
                 .send()?
                 .text()?;
