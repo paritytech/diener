@@ -87,6 +87,10 @@ pub struct Update {
     tag: Option<String>,
 
     /// The `version` source the crates should be updated from.
+    /// There are three valid sources:
+    /// - `latest` - The latest version from crates.io
+    /// - `https://...` - A URL to a raw Cargo.lock file
+    /// - `path/to/Cargo.lock` - A path to a Cargo.lock file
     #[structopt(long, conflicts_with_all = &[ "git" ])]
     version: Option<String>,
 
