@@ -266,7 +266,7 @@ fn handle_dependency(
             Key::Rev(rev) => {
                 remove_keys(dep);
                 *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
-            },
+            }
             _ => unreachable!(),
         }
     // If we want to update a dependency with a crate version or path
@@ -274,11 +274,12 @@ fn handle_dependency(
         match key {
             Key::Version(source) => {
                 let version = get_version(name, package, source)?;
-                *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
+                *dep.get_or_insert("version", "") =
+                    Value::from(version.as_str()).decorated(" ", " ");
                 remove_keys(dep);
                 dep.remove("path");
                 dep.remove("git");
-            },
+            }
             _ => unreachable!(),
         }
     }
