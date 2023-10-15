@@ -1,16 +1,16 @@
-use anyhow::{bail, ensure, Context, Result, anyhow, Ok};
+use anyhow::{anyhow, bail, ensure, Context, Ok, Result};
 use git_url_parse::GitUrl;
+use reqwest::header::USER_AGENT;
+use serde_json;
+pub use std::{cell::RefCell, collections::HashMap};
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
 use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
-use reqwest::header::USER_AGENT;
-use serde_json;
-pub use std::{cell::RefCell, collections::HashMap};
 
 thread_local! {
-	/// Packages version - HashMap(name, version)`
-	pub static PACKAGES_VERSION: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    /// Packages version - HashMap(name, version)`
+    pub static PACKAGES_VERSION: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     /// Cargo.lock from URL or FILE sources
     pub static CARGO_LOCK: RefCell<Option<String>> = RefCell::new(None);
     /// Excluded packages from version updating - HashMap(name, exclude)`
@@ -34,7 +34,6 @@ enum VersionSource {
     Url(String),
     File(String),
 }
-
 
 /// The version the dependencies should be switched to.
 #[derive(Debug, Clone)]
@@ -159,7 +158,7 @@ impl Update {
         if exclude_path.is_some() {
             let mut exclude_doc = Document::from_str(
                 &fs::read_to_string(&exclude_path.unwrap())
-                    .map_err(|err| anyhow!("Failed trying to open exclude toml file: {}", err))?
+                    .map_err(|err| anyhow!("Failed trying to open exclude toml file: {}", err))?,
             )?;
 
             exclude_doc
@@ -177,12 +176,14 @@ impl Update {
                                 .as_inline_table_mut()
                                 .expect("We filter by `is_inline_table`; qed");
                             let value_package = &Value::from(dn);
-                            let read_package = value_package.as_str().expect("We just created it`; qed");
-                            let package = table.get("package").and_then(|v| v.as_str()).unwrap_or(read_package);
-                            EXCLUDED_PACKAGES.with(|r| {
-                                r.borrow_mut()
-                                    .insert(package.to_string(), true)
-                            });
+                            let read_package =
+                                value_package.as_str().expect("We just created it`; qed");
+                            let package = table
+                                .get("package")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(read_package);
+                            EXCLUDED_PACKAGES
+                                .with(|r| r.borrow_mut().insert(package.to_string(), true));
                         })
                 });
         }
@@ -202,7 +203,12 @@ impl Update {
 /// Handle a given dependency.
 ///
 /// This directly modifies the given `dep` in the requested way.
-fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: &Key) -> Result<()> {
+fn handle_dependency(
+    name: &str,
+    dep: &mut InlineTable,
+    rewrite: &Rewrite,
+    key: &Key,
+) -> Result<()> {
     let dep_clone = dep.clone();
     let package = if let Some(package_name) = dep_clone.get("package").and_then(|v| v.as_str()) {
         package_name
@@ -211,10 +217,10 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: 
     };
 
     // Ignore the excluded packages
-    if EXCLUDED_PACKAGES.with(|r| {
-        r.borrow()
-            .get(package).cloned()
-    }).is_some() {
+    if EXCLUDED_PACKAGES
+        .with(|r| r.borrow().get(package).cloned())
+        .is_some()
+    {
         log::debug!("Skipping update for the excluded package '{}' ", package);
         return Ok(());
     }
@@ -325,34 +331,37 @@ fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String
             let url = format!("https://crates.io/api/v1/crates/{}", package);
             let client = reqwest::blocking::Client::new();
 
-            let body = client.get(&url)
+            let body = client
+                .get(&url)
                 .header(USER_AGENT, "diener_crawler (admin@parity.io)")
-                .send()?.text()?;
+                .send()?
+                .text()?;
 
             log::trace!("Crates IO plain response: {}", body);
 
             let json: serde_json::Value = serde_json::from_str(&body).map_err(|_| {
-                anyhow!("error trying to JSON parse the crates.io response: {}", body)
+                anyhow!(
+                    "error trying to JSON parse the crates.io response: {}",
+                    body
+                )
             })?;
 
             log::trace!("Crates IO json response: {}", json);
 
-            json["crate"]["max_version"].as_str().ok_or(
-                anyhow!("package '{}' not found on crates.io", package)
-            )?.to_string()
+            json["crate"]["max_version"]
+                .as_str()
+                .ok_or(anyhow!("package '{}' not found on crates.io", package))?
+                .to_string()
         }
         VersionSource::Url(url) => {
-            let get_body = || -> Result<String> {
-                Ok(reqwest::blocking::get(url)?.text()?)
-            };
+            let get_body = || -> Result<String> { Ok(reqwest::blocking::get(url)?.text()?) };
 
             let body = get_cargo_lock(get_body)?;
 
             log::trace!("Url {} plain response: {}", url, body);
 
-            get_version_from_cargo_lock_file(body, package).ok_or(
-                anyhow!("package '{}' not found in Cargo.lock", package)
-            )?
+            get_version_from_cargo_lock_file(body, package)
+                .ok_or(anyhow!("package '{}' not found in Cargo.lock", package))?
         }
         VersionSource::File(path) => {
             let get_body = || -> Result<String> {
@@ -362,9 +371,8 @@ fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String
 
             let body = get_cargo_lock(get_body)?;
 
-            get_version_from_cargo_lock_file(body, package).ok_or(
-                anyhow!("package '{}' not found in Cargo.lock", package)
-            )?
+            get_version_from_cargo_lock_file(body, package)
+                .ok_or(anyhow!("package '{}' not found in Cargo.lock", package))?
         }
     };
     Ok(version)
@@ -390,17 +398,11 @@ fn get_version_from_cargo_lock_file(body: String, package_name: &str) -> Option<
 /// If version exists in PACKAGES_VERSION, use it
 /// if not, get it from source and insert it into PACKAGES_VERSION
 fn get_version(name: &str, package: &str, source: &VersionSource) -> Result<String> {
-    if let Some(version) = PACKAGES_VERSION.with(|r| {
-            r.borrow()
-                .get(name).cloned()
-    }) {
+    if let Some(version) = PACKAGES_VERSION.with(|r| r.borrow().get(name).cloned()) {
         Ok(version)
     } else {
         let version = get_version_by_source(package, source)?;
-        PACKAGES_VERSION.with(|r| {
-            r.borrow_mut()
-                .insert(name.to_string(), version.clone())
-        });
+        PACKAGES_VERSION.with(|r| r.borrow_mut().insert(name.to_string(), version.clone()));
         Ok(version)
     }
 }
@@ -408,15 +410,11 @@ fn get_version(name: &str, package: &str, source: &VersionSource) -> Result<Stri
 /// If a Cargo.lock exists in CARGO_LOCK, use it
 /// if not, get it from source and insert it into CARGO_LOCK
 fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
-    if let Some(cargo_lock) = CARGO_LOCK.with(|r| {
-            r.borrow().clone()
-    }) {
+    if let Some(cargo_lock) = CARGO_LOCK.with(|r| r.borrow().clone()) {
         Ok(cargo_lock)
     } else {
         let cargo_lock = f()?;
-        CARGO_LOCK.with(|r| {
-            r.replace(Some(cargo_lock.clone()))
-        });
+        CARGO_LOCK.with(|r| r.replace(Some(cargo_lock.clone())));
         Ok(cargo_lock)
     }
 }
