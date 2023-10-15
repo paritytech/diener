@@ -436,10 +436,7 @@ fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
 
 /// Check if the given key is expecting a git reference.
 fn expect_git_ref(key: &Key) -> bool {
-    match key {
-        Key::Tag(_) | Key::Branch(_) | Key::Rev(_) => true,
-        _ => false,
-    }
+    matches!(key, Key::Tag(_) | Key::Branch(_) | Key::Rev(_))
 }
 
 /// Revome the `tag`, `branch` and `rev` keys from a given dependency.
