@@ -166,7 +166,7 @@ impl Update {
                 .clone()
                 .iter()
                 // filter out everything that is not a exclude table
-                .filter(|(k, _)| k.contains("exclude"))
+                .filter(|(k, _)| k.contains("diener_version_exclude"))
                 .filter_map(|(k, v)| v.as_table().map(|t| (k, t)))
                 .for_each(|(k, t)| {
                     t.iter()
@@ -264,7 +264,7 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, key: 
             dep.remove("path");
         }
     }
-    log::debug!("  updated: {:?} <= {}", key, name);
+    log::debug!("Updated: {:?} <= {}", key, name);
     Ok(())
 }
 
