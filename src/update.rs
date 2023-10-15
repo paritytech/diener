@@ -310,7 +310,7 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, key: &Key) -> Result<()> {
     Ok(())
 }
 
-/// Get to source of where to get the versions from.
+/// Get the source of where to get the versions from.
 fn get_version_source(version: &String) -> Result<VersionSource> {
     let source = if version.starts_with("http://") || version.starts_with("https://") {
         VersionSource::Url(version.clone())
