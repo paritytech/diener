@@ -228,50 +228,61 @@ fn handle_dependency(
         return Ok(());
     }
 
-    let git = if let Some(git) = dep
-        .get("git")
-        .and_then(|v| v.as_str())
-        .and_then(|d| GitUrl::parse(d).ok())
-    {
-        git
+    // If we want to update a dependency with a git reference
+    if expect_git_ref(key) {
+        let git = if let Some(git) = dep
+            .get("git")
+            .and_then(|v| v.as_str())
+            .and_then(|d| GitUrl::parse(d).ok())
+        {
+            git
+        } else {
+            // return if there is not any git reference to update
+            return Ok(());
+        };
+
+        let new_git = match rewrite {
+            Rewrite::All => &None,
+            Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
+            Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
+            Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
+            Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
+            _ => return Ok(()),
+        };
+
+        if let Some(new_git) = new_git {
+            *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
+        }
+
+        match key {
+            Key::Tag(tag) => {
+                remove_keys(dep);
+                *dep.get_or_insert("tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
+            }
+            Key::Branch(branch) => {
+                remove_keys(dep);
+                *dep.get_or_insert("branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
+            }
+            Key::Rev(rev) => {
+                remove_keys(dep);
+                *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
+            },
+            _ => unreachable!(),
+        }
+    // If we want to update a dependency with a crate version or path
     } else {
-        return Ok(());
-    };
-
-    let new_git = match rewrite {
-        Rewrite::All => &None,
-        Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
-        Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
-        Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
-        Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
-        _ => return Ok(()),
-    };
-
-    if let Some(new_git) = new_git {
-        *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
-    }
-
-    match key {
-        Key::Tag(tag) => {
-            remove_keys(dep);
-            *dep.get_or_insert("tag", "") = Value::from(tag.as_str()).decorated(" ", " ");
-        }
-        Key::Branch(branch) => {
-            remove_keys(dep);
-            *dep.get_or_insert("branch", "") = Value::from(branch.as_str()).decorated(" ", " ");
-        }
-        Key::Rev(rev) => {
-            remove_keys(dep);
-            *dep.get_or_insert("rev", "") = Value::from(rev.as_str()).decorated(" ", " ");
-        }
-        Key::Version(source) => {
-            let version = get_version(name, package, source)?;
-            *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
-            remove_keys(dep);
-            dep.remove("path");
-            dep.remove("git");
+        match key {
+            Key::Version(source) => {
+                let version = get_version(name, package, source)?;
+                *dep.get_or_insert("version", "") = Value::from(version.as_str()).decorated(" ", " ");
+                remove_keys(dep);
+                dep.remove("path");
+                dep.remove("git");
+            },
+            _ => unreachable!(),
         }
     }
+
     log::debug!("Updated: {:?} <= {}", key, name);
     Ok(())
 }
@@ -419,6 +430,14 @@ fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
         let cargo_lock = f()?;
         CARGO_LOCK.with(|r| r.replace(Some(cargo_lock.clone())));
         Ok(cargo_lock)
+    }
+}
+
+/// Check if the given key is expecting a git reference.
+fn expect_git_ref(key: &Key) -> bool {
+    match key {
+        Key::Tag(_) | Key::Branch(_) | Key::Rev(_) => true,
+        _ => false,
     }
 }
 
