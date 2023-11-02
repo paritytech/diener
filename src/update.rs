@@ -1,20 +1,11 @@
 use anyhow::{anyhow, bail, ensure, Context, Ok, Result};
 use git_url_parse::GitUrl;
 use reqwest::header::USER_AGENT;
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 use std::{env::current_dir, fs, path::PathBuf, str::FromStr};
 use structopt::StructOpt;
 use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
-
-thread_local! {
-    /// Packages version - HashMap(name, version)`
-    pub static PACKAGES_VERSION: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
-    /// Cargo.lock from URL or FILE sources
-    pub static CARGO_LOCK: RefCell<Option<String>> = RefCell::new(None);
-    /// Excluded packages from version updating - HashMap(name, exclude)`
-    pub static EXCLUDED_PACKAGES: RefCell<HashMap<String, bool>> = RefCell::new(HashMap::new());
-}
 
 /// Which dependencies should be rewritten?
 #[derive(Debug, Clone)]
@@ -95,6 +86,8 @@ pub struct Update {
     version: Option<String>,
 
     /// Path to a toml file with the list of dependencies to exclude from updating.
+    /// Expects a `[diener_exclude]` manifest key in the toml file,
+    /// which lists the crates that should not be updated.
     #[structopt(long)]
     exclude: Option<PathBuf>,
 }
@@ -138,6 +131,11 @@ impl Update {
 
     /// Run this subcommand.
     pub fn run(self) -> Result<()> {
+        let mut packages_version: HashMap<String, String> = HashMap::new();
+        let mut cargo_lock: Option<String> = None;
+        let mut excluded_packages: HashMap<String, bool> = HashMap::new();
+
+
         let (rewrite, key, path, exclude_path) = self.into_parts()?;
 
         let path = path
@@ -157,10 +155,10 @@ impl Update {
                 .unwrap_or(false)
         };
 
-        // Populate EXCLUDED_PACKAGES
-        if exclude_path.is_some() {
+        // Populate `excluded_packages`
+        if let Some(exclude_path) = exclude_path {
             let mut exclude_doc = Document::from_str(
-                &fs::read_to_string(exclude_path.unwrap())
+                &fs::read_to_string(exclude_path)
                     .map_err(|err| anyhow!("Failed trying to open exclude toml file: {}", err))?,
             )?;
 
@@ -185,8 +183,7 @@ impl Update {
                                 .get("package")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(read_package);
-                            EXCLUDED_PACKAGES
-                                .with(|r| r.borrow_mut().insert(package.to_string(), true));
+                            excluded_packages.insert(package.to_string(), true);
                         })
                 });
         }
@@ -199,7 +196,16 @@ impl Update {
             .filter(|e| {
                 e.file_type().is_file() && e.file_name().to_string_lossy().ends_with("Cargo.toml")
             })
-            .try_for_each(|toml| handle_toml_file(toml.into_path(), &rewrite, &key))
+            .try_for_each(
+                |toml| handle_toml_file(
+                    toml.into_path(),
+                    &rewrite,
+                    &key,
+                    &mut packages_version,
+                    &mut cargo_lock,
+                    &mut excluded_packages
+                )
+            )
     }
 }
 
@@ -211,6 +217,9 @@ fn handle_dependency(
     dep: &mut InlineTable,
     rewrite: &Rewrite,
     key: &Key,
+    excluded_packages: &mut HashMap<String, bool>,
+    cargo_lock: &mut Option<String>,
+    packages_version: &mut HashMap<String, String>,
 ) -> Result<()> {
     let dep_clone = dep.clone();
     let package = if let Some(package_name) = dep_clone.get("package").and_then(|v| v.as_str()) {
@@ -220,10 +229,7 @@ fn handle_dependency(
     };
 
     // Ignore the excluded packages
-    if EXCLUDED_PACKAGES
-        .with(|r| r.borrow().get(package).cloned())
-        .is_some()
-    {
+    if excluded_packages.get(package).cloned().is_some() {
         log::debug!("Skipping update for the excluded package '{}' ", package);
         return Ok(());
     }
@@ -273,7 +279,7 @@ fn handle_dependency(
     } else {
         match key {
             Key::Version(source) => {
-                let version = get_version(name, package, source)?;
+                let version = get_version(name, package, source, packages_version, cargo_lock)?;
                 *dep.get_or_insert("version", "") =
                     Value::from(version.as_str()).decorated(" ", " ");
                 remove_keys(dep);
@@ -291,7 +297,14 @@ fn handle_dependency(
 /// Handle a given `Cargo.toml`.
 ///
 /// This means scanning all dependencies and rewrite the requested onces.
-fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, key: &Key) -> Result<()> {
+fn handle_toml_file(
+    path: PathBuf,
+    rewrite: &Rewrite,
+    key: &Key,
+    packages_version: &mut HashMap<String, String>,
+    cargo_lock: &mut Option<String>,
+    excluded_packages: &mut HashMap<String, bool>,
+) -> Result<()> {
     log::info!("Processing: {}", path.display());
 
     let mut toml_doc = Document::from_str(&fs::read_to_string(&path)?)?;
@@ -312,7 +325,7 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, key: &Key) -> Result<()> {
                     let table = toml_doc[k][dn]
                         .as_inline_table_mut()
                         .expect("We filter by `is_inline_table`; qed");
-                    let _ = handle_dependency(dn, table, rewrite, key).map_err(|err| {
+                    let _ = handle_dependency(dn, table, rewrite, key, excluded_packages, cargo_lock, packages_version).map_err(|err| {
                         log::error!("Error handling dependency: {}", err);
                     });
                 })
@@ -340,7 +353,7 @@ fn get_version_source(version: &String) -> Result<VersionSource> {
 }
 
 /// Get the version of a package from a given source.
-fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String> {
+fn get_version_by_source(package: &str, source: &VersionSource, cargo_lock: &mut Option<String>) -> Result<String> {
     let version = match source {
         VersionSource::CratesIO => {
             let url = format!("https://crates.io/api/v1/crates/{}", package);
@@ -371,7 +384,7 @@ fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String
         VersionSource::Url(url) => {
             let get_body = || -> Result<String> { Ok(reqwest::blocking::get(url)?.text()?) };
 
-            let body = get_cargo_lock(get_body)?;
+            let body = get_cargo_lock(get_body, cargo_lock)?;
 
             log::trace!("Url {} plain response: {}", url, body);
 
@@ -384,7 +397,7 @@ fn get_version_by_source(package: &str, source: &VersionSource) -> Result<String
                 Ok(fs::read_to_string(path)?)
             };
 
-            let body = get_cargo_lock(get_body)?;
+            let body = get_cargo_lock(get_body, cargo_lock)?;
 
             get_version_from_cargo_lock_file(body, package)
                 .ok_or(anyhow!("package '{}' not found in Cargo.lock", package))?
@@ -410,27 +423,33 @@ fn get_version_from_cargo_lock_file(body: String, package_name: &str) -> Option<
     None
 }
 
-/// If version exists in PACKAGES_VERSION, use it
-/// if not, get it from source and insert it into PACKAGES_VERSION
-fn get_version(name: &str, package: &str, source: &VersionSource) -> Result<String> {
-    if let Some(version) = PACKAGES_VERSION.with(|r| r.borrow().get(name).cloned()) {
+/// If version exists in `packages_version`, use it
+/// if not, get it from source and insert it into `packages_version`
+fn get_version(
+    name: &str,
+    package: &str,
+    source: &VersionSource,
+    packages_version: &mut HashMap<String, String>,
+    cargo_lock: &mut Option<String>,
+) -> Result<String> {
+    if let Some(version) = packages_version.get(name).cloned() {
         Ok(version)
     } else {
-        let version = get_version_by_source(package, source)?;
-        PACKAGES_VERSION.with(|r| r.borrow_mut().insert(name.to_string(), version.clone()));
+        let version = get_version_by_source(package, source, cargo_lock)?;
+        (*packages_version).insert(name.to_string(), version.clone());
         Ok(version)
     }
 }
 
-/// If a Cargo.lock exists in CARGO_LOCK, use it
-/// if not, get it from source and insert it into CARGO_LOCK
-fn get_cargo_lock(f: impl FnOnce() -> Result<String>) -> Result<String> {
-    if let Some(cargo_lock) = CARGO_LOCK.with(|r| r.borrow().clone()) {
+/// If a Cargo.lock exists in `cargo_lock`, use it
+/// if not, get it from source and insert it into `cargo_lock`
+fn get_cargo_lock(f: impl FnOnce() -> Result<String>, cargo_lock: &mut Option<String>) -> Result<String> {
+    if let Some(cargo_lock) = cargo_lock.clone() {
         Ok(cargo_lock)
     } else {
-        let cargo_lock = f()?;
-        CARGO_LOCK.with(|r| r.replace(Some(cargo_lock.clone())));
-        Ok(cargo_lock)
+        let new_cargo_lock = f()?;
+        *cargo_lock = Some(new_cargo_lock.clone());
+        Ok(new_cargo_lock)
     }
 }
 
