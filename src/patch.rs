@@ -106,15 +106,22 @@ pub struct Patch {
     /// The target is `[patch.TARGET]` in the final `Cargo.toml`.
     #[structopt(
         long,
-        conflicts_with_all = &[ "crates", "substrate", "cumulus", "polkadot", "beefy" ]
+        conflicts_with_all = &[ "crates", "substrate", "cumulus", "polkadot", "beefy", "sdk" ]
     )]
     target: Option<String>,
+
+    /// Use the official Polkadot-SDK monorepo as patch target.
+    #[structopt(
+    long,
+    conflicts_with_all = &[ "target", "substrate", "polkadot", "cumulus", "beefy", "crates" ]
+)]
+    sdk: bool,
 
     /// Use the official Substrate repo as patch target.
     #[structopt(
         long,
         short = "s",
-        conflicts_with_all = &[ "target", "polkadot", "cumulus", "crates", "beefy" ]
+        conflicts_with_all = &[ "target", "polkadot", "cumulus", "crates", "beefy", "sdk" ]
     )]
     substrate: bool,
 
@@ -122,7 +129,7 @@ pub struct Patch {
     #[structopt(
         long,
         short = "p",
-        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "beefy" ]
+        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "beefy", "sdk" ]
     )]
     polkadot: bool,
 
@@ -130,7 +137,7 @@ pub struct Patch {
     #[structopt(
         long,
         short = "c",
-        conflicts_with_all = &[ "target", "substrate", "polkadot", "crates", "beefy" ]
+        conflicts_with_all = &[ "target", "substrate", "polkadot", "crates", "beefy", "sdk" ]
     )]
     cumulus: bool,
 
@@ -138,14 +145,14 @@ pub struct Patch {
     #[structopt(
         long,
         short = "b",
-        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "polkadot" ]
+        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "polkadot", "sdk" ]
     )]
     beefy: bool,
 
     /// Use `crates.io` as patch target.
     #[structopt(
         long,
-        conflicts_with_all = &[ "target", "substrate", "polkadot", "cumulus", "beefy" ]
+        conflicts_with_all = &[ "target", "substrate", "polkadot", "cumulus", "beefy", "sdk" ]
     )]
     crates: bool,
 }
@@ -205,8 +212,12 @@ impl Patch {
             ))
         } else if self.crates {
             Ok(PatchTarget::Crates)
+        } else if self.sdk {
+            Ok(PatchTarget::Git(
+                "https://github.com/paritytech/polkadot-sdk".into(),
+            ))
         } else {
-            bail!("You need to pass `--target`, `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--crates`!");
+            bail!("You need to pass `--target`, `--sdk`, `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--crates`!");
         }
     }
 }
