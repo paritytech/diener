@@ -13,6 +13,7 @@ enum Rewrite {
     Polkadot(Option<String>),
     Cumulus(Option<String>),
     Beefy(Option<String>),
+    Sdk(Option<String>),
 }
 
 /// The version the dependencies should be switched to.
@@ -49,6 +50,10 @@ pub struct Update {
     /// Alter polkadot, substrate + beefy dependencies
     #[structopt(long, short = "a")]
     all: bool,
+
+    /// Only alter Polkadot-SDK monorepo dependencies.
+    #[structopt(long, conflicts_with_all = &[ "substrate", "polkadot", "cumulus", "beefy", "all" ])]
+    sdk: bool,
 
     /// The `branch` that the dependencies should use.
     #[structopt(long, conflicts_with_all = &[ "rev", "tag" ])]
@@ -94,6 +99,8 @@ impl Update {
             Rewrite::Polkadot(self.git)
         } else if self.cumulus {
             Rewrite::Cumulus(self.git)
+        } else if self.sdk {
+            Rewrite::Sdk(self.git)
         } else {
             bail!("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.");
         };
