@@ -3,13 +3,13 @@ name = "diener"
 version = "0.5.0"
 authors = ["Bastian Köcher <git@kchr.de>"]
 edition = "2021"
-categories = [ "command-line-utilities" ]
+categories = ["command-line-utilities"]
 documentation = "https://docs.rs/diener"
 repository = "https://github.com/bkchr/diener"
-keywords = [ "cli", "substrate", "polkadot" ]
+keywords = ["cli", "substrate", "polkadot", "polkadot-sdk"]
 license = "Apache-2.0/MIT"
 description = """
-dependency diener is a tool for easily changing [Substrate](https://github.com/paritytech/substrate), [Polkadot](https://github.com/paritytech/polkadot) or [BEEFY](https://github.com/paritytech/grandpa-bridge-gadget) dependency versions
+dependency diener is a tool for easily changing [Polkadot SDK](https://github.com/paritytech/polkadot-sdk) dependency versions
 """
 readme = "./README.md"
 
