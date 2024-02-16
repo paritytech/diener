@@ -113,7 +113,7 @@ jobs:
       - name: Prepare new Formula
         env:
           NAME: Diener
-          DESCRIPTION: "dependency diener is a tool for easily changing Substrate or Polkadot dependency versions"
+          DESCRIPTION: "dependency diener is a tool for easily changing Polkadot SDK dependency versions"
           SITE: https://github.com
           REPO: paritytech/diener
           SHA256: ${{env.SHA256}}

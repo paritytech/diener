@@ -102,50 +102,19 @@ pub struct Patch {
     point_to_git_commit: Option<String>,
 
     /// The patch target that should be used.
+    /// The default is the official `polkadot-sdk` repository.
     ///
     /// The target is `[patch.TARGET]` in the final `Cargo.toml`.
     #[structopt(
         long,
-        conflicts_with_all = &[ "crates", "substrate", "cumulus", "polkadot", "beefy" ]
+        conflicts_with_all = &[ "crates" ]
     )]
     target: Option<String>,
 
-    /// Use the official Substrate repo as patch target.
+    /// Use `crates.io` as patch target instead.
     #[structopt(
         long,
-        short = "s",
-        conflicts_with_all = &[ "target", "polkadot", "cumulus", "crates", "beefy" ]
-    )]
-    substrate: bool,
-
-    /// Use the official Polkadot repo as patch target.
-    #[structopt(
-        long,
-        short = "p",
-        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "beefy" ]
-    )]
-    polkadot: bool,
-
-    /// Use the official Cumulus repo as patch target.
-    #[structopt(
-        long,
-        short = "c",
-        conflicts_with_all = &[ "target", "substrate", "polkadot", "crates", "beefy" ]
-    )]
-    cumulus: bool,
-
-    /// Use the official BEEFY repo as patch target.
-    #[structopt(
-        long,
-        short = "b",
-        conflicts_with_all = &[ "target", "substrate", "cumulus", "crates", "polkadot" ]
-    )]
-    beefy: bool,
-
-    /// Use `crates.io` as patch target.
-    #[structopt(
-        long,
-        conflicts_with_all = &[ "target", "substrate", "polkadot", "cumulus", "beefy" ]
+        conflicts_with_all = &[ "target" ]
     )]
     crates: bool,
 }
@@ -153,7 +122,7 @@ pub struct Patch {
 impl Patch {
     /// Run this subcommand.
     pub fn run(self) -> Result<()> {
-        let patch_target = self.patch_target()?;
+        let patch_target = self.patch_target();
         let path = self
             .path
             .map(|p| {
@@ -184,29 +153,13 @@ impl Patch {
         )
     }
 
-    fn patch_target(&self) -> Result<PatchTarget> {
+    fn patch_target(&self) -> PatchTarget {
         if let Some(ref custom) = self.target {
-            Ok(PatchTarget::Custom(custom.clone()))
-        } else if self.substrate {
-            Ok(PatchTarget::Git(
-                "https://github.com/paritytech/substrate".into(),
-            ))
-        } else if self.polkadot {
-            Ok(PatchTarget::Git(
-                "https://github.com/paritytech/polkadot".into(),
-            ))
-        } else if self.cumulus {
-            Ok(PatchTarget::Git(
-                "https://github.com/paritytech/cumulus".into(),
-            ))
-        } else if self.beefy {
-            Ok(PatchTarget::Git(
-                "https://github.com/paritytech/parity-bridges-gadget".into(),
-            ))
+            PatchTarget::Custom(custom.clone())
         } else if self.crates {
-            Ok(PatchTarget::Crates)
+            PatchTarget::Crates
         } else {
-            bail!("You need to pass `--target`, `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--crates`!");
+            PatchTarget::Git("https://github.com/paritytech/polkadot-sdk".into())
         }
     }
 }
