@@ -5,16 +5,6 @@ use structopt::StructOpt;
 use toml_edit::{Document, InlineTable, Value};
 use walkdir::{DirEntry, WalkDir};
 
-/// Which dependencies should be rewritten?
-#[derive(Debug, Clone)]
-enum Rewrite {
-    All,
-    Substrate(Option<String>),
-    Polkadot(Option<String>),
-    Cumulus(Option<String>),
-    Beefy(Option<String>),
-}
-
 /// The version the dependencies should be switched to.
 #[derive(Debug, Clone)]
 enum Version {
@@ -29,26 +19,6 @@ pub struct Update {
     /// The path where Diener should search for `Cargo.toml` files.
     #[structopt(long)]
     path: Option<PathBuf>,
-
-    /// Only alter Substrate dependencies.
-    #[structopt(long, short = "s")]
-    substrate: bool,
-
-    /// Only alter Polkadot dependencies.
-    #[structopt(long, short = "p")]
-    polkadot: bool,
-
-    /// Only alter Cumulus dependencies.
-    #[structopt(long, short = "c")]
-    cumulus: bool,
-
-    /// Only alter BEEFY dependencies.
-    #[structopt(long, short = "b")]
-    beefy: bool,
-
-    /// Alter polkadot, substrate + beefy dependencies
-    #[structopt(long, short = "a")]
-    all: bool,
 
     /// The `branch` that the dependencies should use.
     #[structopt(long, conflicts_with_all = &[ "rev", "tag" ])]
@@ -68,8 +38,8 @@ pub struct Update {
 }
 
 impl Update {
-    /// Convert the options into the parts `Rewrite`, `Version`, `Option<PathBuf>`.
-    fn into_parts(self) -> Result<(Rewrite, Version, Option<PathBuf>)> {
+    /// Convert the options into the parts `Option<String>`, `Version`, `Option<PathBuf>`.
+    fn into_parts(self) -> Result<(Option<String>, Version, Option<PathBuf>)> {
         let version = if let Some(branch) = self.branch {
             Version::Branch(branch)
         } else if let Some(rev) = self.rev {
@@ -80,30 +50,12 @@ impl Update {
             bail!("You need to pass `--branch`, `--tag` or `--rev`");
         };
 
-        let rewrite = if self.all {
-            if self.git.is_some() {
-                bail!("You need to pass `--substrate`, `--polkadot`, `--cumulus` or `--beefy` for `--git`.");
-            } else {
-                Rewrite::All
-            }
-        } else if self.substrate {
-            Rewrite::Substrate(self.git)
-        } else if self.beefy {
-            Rewrite::Beefy(self.git)
-        } else if self.polkadot {
-            Rewrite::Polkadot(self.git)
-        } else if self.cumulus {
-            Rewrite::Cumulus(self.git)
-        } else {
-            bail!("You must specify one of `--substrate`, `--polkadot`, `--cumulus`, `--beefy` or `--all`.");
-        };
-
-        Ok((rewrite, version, self.path))
+        Ok((self.git, version, self.path))
     }
 
     /// Run this subcommand.
     pub fn run(self) -> Result<()> {
-        let (rewrite, version, path) = self.into_parts()?;
+        let (git, version, path) = self.into_parts()?;
 
         let path = path
             .map(Ok)
@@ -130,34 +82,24 @@ impl Update {
             .filter(|e| {
                 e.file_type().is_file() && e.file_name().to_string_lossy().ends_with("Cargo.toml")
             })
-            .try_for_each(|toml| handle_toml_file(toml.into_path(), &rewrite, &version))
+            .try_for_each(|toml| handle_toml_file(toml.into_path(), &git, &version))
     }
 }
 
 /// Handle a given dependency.
 ///
 /// This directly modifies the given `dep` in the requested way.
-fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, version: &Version) {
-    let git = if let Some(git) = dep
+fn handle_dependency(name: &str, dep: &mut InlineTable, git: &Option<String>, version: &Version) {
+    if !dep
         .get("git")
         .and_then(|v| v.as_str())
         .and_then(|d| GitUrl::parse(d).ok())
+        .is_some_and(|git| git.name == "polkadot-sdk")
     {
-        git
-    } else {
         return;
-    };
+    }
 
-    let new_git = match rewrite {
-        Rewrite::All => &None,
-        Rewrite::Substrate(new_git) if git.name == "substrate" => new_git,
-        Rewrite::Polkadot(new_git) if git.name == "polkadot" => new_git,
-        Rewrite::Cumulus(new_git) if git.name == "cumulus" => new_git,
-        Rewrite::Beefy(new_git) if git.name == "grandpa-bridge-gadget" => new_git,
-        _ => return,
-    };
-
-    if let Some(new_git) = new_git {
+    if let Some(new_git) = git {
         *dep.get_or_insert("git", "") = Value::from(new_git.as_str()).decorated(" ", "");
     }
 
@@ -182,7 +124,7 @@ fn handle_dependency(name: &str, dep: &mut InlineTable, rewrite: &Rewrite, versi
 /// Handle a given `Cargo.toml`.
 ///
 /// This means scanning all dependencies and rewrite the requested onces.
-fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Result<()> {
+fn handle_toml_file(path: PathBuf, git: &Option<String>, version: &Version) -> Result<()> {
     log::info!("Processing: {}", path.display());
 
     let mut toml_doc = Document::from_str(&fs::read_to_string(&path)?)?;
@@ -203,7 +145,7 @@ fn handle_toml_file(path: PathBuf, rewrite: &Rewrite, version: &Version) -> Resu
                     let table = toml_doc[k][dn]
                         .as_inline_table_mut()
                         .expect("We filter by `is_inline_table`; qed");
-                    handle_dependency(dn, table, rewrite, version);
+                    handle_dependency(dn, table, git, version);
                 })
         });
 
