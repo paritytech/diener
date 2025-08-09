@@ -1,5 +1,6 @@
 use anyhow::{anyhow, bail, Context, Error, Result};
 use std::{
+    collections::HashSet,
     env::current_dir,
     fs,
     path::{Path, PathBuf},
@@ -145,10 +146,17 @@ impl Patch {
             self.point_to_git_commit,
         )?;
 
+        let workspace_dependencies: HashSet<_> =
+            workspace_dependencies(&path)?.map(|p| p.name).collect();
+
+        let packages_to_patch = workspace_members(&self.crates_to_patch)?
+            .filter(|p| workspace_dependencies.contains(&p.name))
+            .into_iter();
+
         add_patches_for_packages(
             &cargo_toml_to_patch,
             &patch_target,
-            workspace_packages(&self.crates_to_patch)?,
+            packages_to_patch,
             point_to,
         )
     }
@@ -177,8 +185,20 @@ fn workspace_root_package(path: &Path) -> Result<PathBuf> {
     Ok(metadata.workspace_root.join("Cargo.toml").into())
 }
 
-/// Returns all package names of the given `workspace`.
-fn workspace_packages(workspace: &Path) -> Result<impl Iterator<Item = cargo_metadata::Package>> {
+/// Returns all dependencies of the given `workspace`.
+fn workspace_dependencies(
+    workspace: &Path,
+) -> Result<impl Iterator<Item = cargo_metadata::Package>> {
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(workspace)
+        .exec()
+        .with_context(|| "Failed to get cargo metadata for workspace.")?;
+
+    Ok(metadata.packages.clone().into_iter())
+}
+
+/// Returns all members of the given `workspace`.
+fn workspace_members(workspace: &Path) -> Result<impl Iterator<Item = cargo_metadata::Package>> {
     let metadata = cargo_metadata::MetadataCommand::new()
         .current_dir(workspace)
         .exec()
