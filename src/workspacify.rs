@@ -175,6 +175,11 @@ fn handle_dep(
     dep.1.remove("git");
     dep.1.remove("branch");
     dep.1.remove("version");
+
+    // Workspace dependencies cannot use .path
+    // Turn the workspace dependency into a normal dependency before patching it
+    dep.1.remove("workspace");
+
     dep.1
         .insert("path", Value::from(relpath.to_string_lossy().as_ref()));
     dep.1

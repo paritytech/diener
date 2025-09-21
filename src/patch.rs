@@ -251,6 +251,10 @@ fn add_patches_for_packages(
 
         let path: PathBuf = p.manifest_path.into();
 
+        // Workspace dependencies cannot use .path or .git
+        // Turn the workspace dependency into a normal dependency before patching it
+        patch.remove("workspace");
+
         match &point_to {
             PointTo::Path => {
                 *patch.get_or_insert("path", "") =
